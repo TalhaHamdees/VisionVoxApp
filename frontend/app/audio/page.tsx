@@ -1,0 +1,1783 @@
+'use client';
+
+// Debug flag - set to true to enable detailed console logging
+const DEBUG = true;
+
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
+import { DashboardLayout } from '@/components/shared/dashboard-layout';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectLabel, SelectSeparator, SelectGroup } from '@/components/ui/select';
+import { Music, Mic, Upload, Loader2, Play, Pause, Download, Volume2, FileText, Wand2, Search, Heart, Filter, X, Check, Users2, Globe, CalendarDays, Tags, Sparkles } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
+import { Checkbox } from '@/components/ui/checkbox';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger, DropdownMenuCheckboxItem } from '@/components/ui/dropdown-menu';
+import * as SelectPrimitive from "@radix-ui/react-select";
+import { cn } from "@/lib/utils";
+
+// Custom SelectItem without the default indicator
+const CustomSelectItem = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Item>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
+>(({ className, children, ...props }, ref) => (
+  <SelectPrimitive.Item
+    ref={ref}
+    className={cn(
+      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      className
+    )}
+    {...props}
+  >
+    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+  </SelectPrimitive.Item>
+));
+CustomSelectItem.displayName = "CustomSelectItem";
+
+export default function AudioPage() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+  const [text, setText] = useState('');
+  const [wordCount, setWordCount] = useState(0);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [hasAudio, setHasAudio] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [selectedVoice, setSelectedVoice] = useState('');
+  const [speed, setSpeed] = useState(1);
+  const [pitch, setPitch] = useState(1);
+  const [stability, setStability] = useState(0.5);
+  const [similarityBoost, setSimilarityBoost] = useState(0.75);
+  const [style, setStyle] = useState(0.0);
+  const [file, setFile] = useState<File | null>(null);
+  const [activeTab, setActiveTab] = useState('generate');
+  const [playingSample, setPlayingSample] = useState<string | null>(null);
+  const [audioRefs] = useState<Record<string, HTMLAudioElement>>({});
+  const [generationMode, setGenerationMode] = useState<'default' | 'crisp'>('default');
+  const [voices, setVoices] = useState<Array<{
+    voice_id: string;
+    name: string;
+    preview_url: string;
+    description?: string;
+    category?: string;
+    gender?: string;
+    accent?: string;
+    age?: string;
+    use_case?: string;
+    isFavorite?: boolean;
+  }>>([]);
+  const [isLoadingVoices, setIsLoadingVoices] = useState(true);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  
+  // New state for search and filters
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilters, setActiveFilters] = useState<{
+    gender: string[];
+    accent: string[];
+    age: string[];
+    category: string[];
+  }>({
+    gender: [],
+    accent: [],
+    age: [],
+    category: []
+  });
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  
+  // Filter options
+  const filterOptions = {
+    gender: ['male', 'female', 'other'],
+    accent: ['american', 'british', 'indian', 'australian', 'african', 'european', 'neutral'],
+    age: ['child', 'young', 'adult', 'elderly'],
+    category: ['premade', 'cloned', 'generated']
+  };
+
+  // Debug configuration
+  const debugConfig = {
+    enabled: true,
+    apiUrl: process.env.NEXT_PUBLIC_AUDIO_API_URL || 'http://localhost:3001/api/audio'
+  };
+
+  // Debug function to log important events
+  const debugLog = (...args: any[]) => {
+    if (DEBUG) {
+      console.log(`[AudioPage Debug]`, ...args);
+    }
+  };
+  
+  // Log initial state
+  useEffect(() => {
+    debugLog('Component mounted', { 
+      user: user ? 'Logged in' : 'Not logged in', 
+      loading, 
+      apiUrl: process.env.NEXT_PUBLIC_AUDIO_API_URL || '/api/audio'
+    });
+  }, [user, loading]);
+
+  // Debug voices when they change
+  useEffect(() => {
+    console.log('Voices state updated:', voices);
+  }, [voices]);
+
+  // Update timer for audio playback
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
+    if (isPlaying && audioRefs['generated']) {
+      interval = setInterval(() => {
+        setCurrentTime(audioRefs['generated'].currentTime);
+        setDuration(audioRefs['generated'].duration || 0);
+      }, 1000);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isPlaying, audioRefs]);
+
+  // Load favorites from localStorage
+  useEffect(() => {
+    const loadFavorites = async () => {
+      if (!user) return;
+      
+      try {
+        // Use localStorage instead of API
+        const storedFavorites = localStorage.getItem('audioFavorites');
+        if (storedFavorites) {
+          setFavorites(JSON.parse(storedFavorites));
+          debugLog('Loaded favorites from localStorage', JSON.parse(storedFavorites));
+        }
+      } catch (error) {
+        console.error('Error loading favorites:', error);
+      }
+    };
+    
+    loadFavorites();
+  }, [user]);
+
+  // Update voices with favorite status
+  useEffect(() => {
+    if (voices.length > 0 && favorites.length > 0) {
+      // Create a new array only if the favorite status has actually changed
+      const needsUpdate = voices.some(voice => 
+        favorites.includes(voice.voice_id) !== voice.isFavorite
+      );
+      
+      if (needsUpdate) {
+        debugLog('Updating voices with favorite status', { 
+          favoritesCount: favorites.length, 
+          voicesCount: voices.length 
+        });
+        const updatedVoices = voices.map(voice => ({
+          ...voice,
+          isFavorite: favorites.includes(voice.voice_id)
+        }));
+        setVoices(updatedVoices);
+      }
+    }
+  }, [favorites]);
+
+  // Fetch voices from the backend
+  useEffect(() => {
+    const fetchVoices = async () => {
+      try {
+        setIsLoadingVoices(true);
+        const AUDIO_API_URL = process.env.NEXT_PUBLIC_AUDIO_API_URL || 'http://localhost:3001/api/audio';
+        const response = await fetch(`${AUDIO_API_URL}/voices`);
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch voices');
+        }
+        
+        const voicesData = await response.json();
+        console.log('Fetched voices:', voicesData);
+        
+        // If no voices returned or empty array, use fallback voices
+        if (!voicesData || voicesData.length === 0) {
+          console.warn('No voices returned from API, using fallback voices');
+          const fallbackVoices = [
+            { 
+              voice_id: 'JBFqnCBsd6RMkjVDRZzb', 
+              name: 'George', 
+              preview_url: 'https://elevenlabs.io/audio/ejJUMKpNu9mBQEXBmYG3.mp3',
+              description: 'A deep authoritative male voice with a British accent',
+              gender: 'male',
+              accent: 'british',
+              age: 'middle-aged',
+              category: 'premade'
+            },
+            { 
+              voice_id: '21m00Tcm4TlvDq8ikWAM', 
+              name: 'Rachel', 
+              preview_url: 'https://elevenlabs.io/audio/ejJUMKpNu9mBQEXBmYG3.mp3',
+              description: 'A professional female voice with a neutral accent',
+              gender: 'female',
+              accent: 'neutral',
+              age: 'adult',
+              category: 'premade'
+            },
+            { 
+              voice_id: 'EXAVITQu4vr4xnSDxMaL', 
+              name: 'Bella', 
+              preview_url: 'https://elevenlabs.io/audio/ejJUMKpNu9mBQEXBmYG3.mp3',
+              description: 'A friendly female voice with a warm tone',
+              gender: 'female',
+              accent: 'american',
+              age: 'young',
+              category: 'premade'
+            },
+            { 
+              voice_id: 'VR6AewLTigWG4xSOukaG', 
+              name: 'Adam', 
+              preview_url: 'https://elevenlabs.io/audio/ejJUMKpNu9mBQEXBmYG3.mp3',
+              description: 'A deep male voice with a professional tone',
+              gender: 'male',
+              accent: 'british',
+              age: 'adult',
+              category: 'premade'
+            },
+            { 
+              voice_id: 'pNInz6obpgDQGcFmaJgB', 
+              name: 'Josh', 
+              preview_url: 'https://elevenlabs.io/audio/ejJUMKpNu9mBQEXBmYG3.mp3',
+              description: 'A casual male voice with a conversational style',
+              gender: 'male',
+              accent: 'american',
+              age: 'young',
+              category: 'premade'
+            },
+            { 
+              voice_id: 'flq6f7yk4E4fJM5XTYuZ', 
+              name: 'Elli', 
+              preview_url: 'https://elevenlabs.io/audio/ejJUMKpNu9mBQEXBmYG3.mp3',
+              description: 'A child-like voice with a playful tone',
+              gender: 'female',
+              accent: 'neutral',
+              age: 'young',
+              category: 'premade'
+            }
+          ];
+          
+          // Mark favorites
+          const voicesWithFavorites = fallbackVoices.map(voice => ({
+            ...voice,
+            isFavorite: favorites.includes(voice.voice_id)
+          }));
+          
+          setVoices(voicesWithFavorites);
+        } else {
+          // Mark favorites
+          const voicesWithFavorites = voicesData.map((voice: any) => ({
+            ...voice,
+            isFavorite: favorites.includes(voice.voice_id)
+          }));
+          
+          setVoices(voicesWithFavorites);
+        }
+        
+        // Set default selected voice if available
+        if (voicesData.length > 0 && !selectedVoice) {
+          setSelectedVoice('JBFqnCBsd6RMkjVDRZzb'); // Set to George
+        } else if (!selectedVoice) {
+          setSelectedVoice('JBFqnCBsd6RMkjVDRZzb'); // Fallback to George
+        }
+      } catch (error) {
+        console.error('Error fetching voices:', error);
+        // Use fallback voices on error
+        const fallbackVoices = [
+          { 
+            voice_id: 'JBFqnCBsd6RMkjVDRZzb', 
+            name: 'George', 
+            preview_url: 'https://elevenlabs.io/audio/ejJUMKpNu9mBQEXBmYG3.mp3',
+            description: 'A deep authoritative male voice with a British accent',
+            gender: 'male',
+            accent: 'british',
+            age: 'middle-aged',
+            category: 'premade'
+          },
+          { 
+            voice_id: '21m00Tcm4TlvDq8ikWAM', 
+            name: 'Rachel', 
+            preview_url: 'https://elevenlabs.io/audio/ejJUMKpNu9mBQEXBmYG3.mp3',
+            description: 'A professional female voice with a neutral accent',
+            gender: 'female',
+            accent: 'neutral',
+            age: 'adult',
+            category: 'premade'
+          },
+          { 
+            voice_id: 'EXAVITQu4vr4xnSDxMaL', 
+            name: 'Bella', 
+            preview_url: 'https://elevenlabs.io/audio/ejJUMKpNu9mBQEXBmYG3.mp3',
+            description: 'A friendly female voice with a warm tone',
+            gender: 'female',
+            accent: 'american',
+            age: 'young',
+            category: 'premade'
+          },
+          { 
+            voice_id: 'VR6AewLTigWG4xSOukaG', 
+            name: 'Adam', 
+            preview_url: 'https://elevenlabs.io/audio/ejJUMKpNu9mBQEXBmYG3.mp3',
+            description: 'A deep male voice with a professional tone',
+            gender: 'male',
+            accent: 'british',
+            age: 'adult',
+            category: 'premade'
+          },
+          { 
+            voice_id: 'pNInz6obpgDQGcFmaJgB', 
+            name: 'Josh', 
+            preview_url: 'https://elevenlabs.io/audio/ejJUMKpNu9mBQEXBmYG3.mp3',
+            description: 'A casual male voice with a conversational style',
+            gender: 'male',
+            accent: 'american',
+            age: 'young',
+            category: 'premade'
+          },
+          { 
+            voice_id: 'flq6f7yk4E4fJM5XTYuZ', 
+            name: 'Elli', 
+            preview_url: 'https://elevenlabs.io/audio/ejJUMKpNu9mBQEXBmYG3.mp3',
+            description: 'A child-like voice with a playful tone',
+            gender: 'female',
+            accent: 'neutral',
+            age: 'young',
+            category: 'premade'
+          }
+        ];
+        
+        // Mark favorites
+        const voicesWithFavorites = fallbackVoices.map(voice => ({
+          ...voice,
+          isFavorite: favorites.includes(voice.voice_id)
+        }));
+        
+        setVoices(voicesWithFavorites);
+        setSelectedVoice('JBFqnCBsd6RMkjVDRZzb'); // Set to George
+      } finally {
+        setIsLoadingVoices(false);
+      }
+    };
+    
+    fetchVoices();
+  }, [favorites, selectedVoice]);
+
+  // Calculate word count whenever text changes
+  useEffect(() => {
+    // Count words by splitting on whitespace and filtering out empty strings
+    const words = text.trim().split(/\s+/).filter(word => word.length > 0);
+    setWordCount(words.length);
+  }, [text]);
+
+  // Filter voices based on search query and active filters
+  const getFilteredVoices = () => {
+    return voices.filter(voice => {
+      // Filter by search query
+      const matchesSearch = !searchQuery || 
+        voice.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (voice.description && voice.description.toLowerCase().includes(searchQuery.toLowerCase()));
+      
+      // Filter by favorites
+      const matchesFavorites = !showFavoritesOnly || voice.isFavorite;
+      
+      // Filter by other filters
+      const matchesGender = activeFilters.gender.length === 0 || 
+        (voice.gender && activeFilters.gender.includes(voice.gender));
+      
+      const matchesAccent = activeFilters.accent.length === 0 || 
+        (voice.accent && activeFilters.accent.includes(voice.accent));
+      
+      const matchesAge = activeFilters.age.length === 0 || 
+        (voice.age && activeFilters.age.includes(voice.age));
+      
+      const matchesCategory = activeFilters.category.length === 0 || 
+        (voice.category && activeFilters.category.includes(voice.category));
+      
+      return matchesSearch && matchesFavorites && matchesGender && 
+        matchesAccent && matchesAge && matchesCategory;
+    });
+  };
+  
+  // Toggle filter
+  const toggleFilter = (type: keyof typeof activeFilters, value: string) => {
+    setActiveFilters(prev => {
+      const current = [...prev[type]];
+      const index = current.indexOf(value);
+      
+      if (index === -1) {
+        current.push(value);
+      } else {
+        current.splice(index, 1);
+      }
+      
+      return {
+        ...prev,
+        [type]: current
+      };
+    });
+  };
+  
+  // Clear all filters
+  const clearFilters = () => {
+    setActiveFilters({
+      gender: [],
+      accent: [],
+      age: [],
+      category: []
+    });
+    setSearchQuery('');
+    setShowFavoritesOnly(false);
+  };
+
+  // Function to play voice sample
+  const playVoiceSample = (voiceId: string) => {
+    // Stop any currently playing sample
+    if (playingSample && audioRefs[playingSample]) {
+      audioRefs[playingSample].pause();
+      audioRefs[playingSample].currentTime = 0;
+    }
+
+    // If clicking the same sample that's playing, just stop it
+    if (playingSample === voiceId) {
+      setPlayingSample(null);
+      return;
+    }
+
+    // Play the selected sample
+    const voice = voices.find(v => v.voice_id === voiceId);
+    if (voice) {
+      // Use preview URL if available, otherwise use a default sample
+      const audioUrl = voice.preview_url || 'https://elevenlabs.io/audio/ejJUMKpNu9mBQEXBmYG3.mp3';
+      
+      // Create audio element if it doesn't exist
+      if (!audioRefs[voiceId]) {
+        audioRefs[voiceId] = new Audio(audioUrl);
+        audioRefs[voiceId].addEventListener('ended', () => {
+          setPlayingSample(null);
+        });
+      }
+      
+      // Play the audio
+      audioRefs[voiceId].play().catch((err: Error) => {
+        console.error('Error playing audio:', err);
+      });
+      
+      setPlayingSample(voiceId);
+    } else {
+      console.error('No preview URL available for this voice');
+    }
+  };
+
+  // Function to handle audio generation based on selected mode
+  const handleGenerateAudio = async () => {
+    debugLog('Generating audio with mode:', generationMode);
+    
+    if (generationMode === 'default') {
+      await generateDefaultAudio();
+    } else if (generationMode === 'crisp') {
+      await generateCrispVoiceover();
+    }
+  };
+
+  // Add a new function to play audio automatically after generation
+  const playGeneratedAudio = () => {
+    if (hasAudio && audioRefs['generated']) {
+      audioRefs['generated'].play()
+        .then(() => {
+          setIsPlaying(true);
+          debugLog('Auto-playing generated audio');
+        })
+        .catch(error => {
+          debugLog('Error auto-playing audio:', error);
+          toast({
+            title: "Playback Error",
+            description: "Could not auto-play audio. Please click play manually.",
+            variant: "destructive"
+          });
+        });
+    }
+  };
+
+  // Modify the generateAudio function to auto-play after generation
+  const generateAudio = async () => {
+    if (!text) {
+      debugLog('No text provided, aborting generation');
+      toast({
+        title: "Text Required",
+        description: "Please enter some text to generate audio.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    if (!user) {
+      debugLog('User not logged in, redirecting to login');
+      router.push('/login');
+      return;
+    }
+    
+    debugLog('Starting audio generation', { 
+      textLength: text.length,
+      selectedVoice,
+      settings: { speed, pitch, stability, similarityBoost, style }
+    });
+    
+    setIsGenerating(true);
+    
+    try {
+      // Create form data
+      const formData = new FormData();
+      formData.append('text', text);
+      formData.append('voice_id', selectedVoice);
+      formData.append('model_id', 'eleven_multilingual_v2');
+      
+      // Use the slider values from UI state
+      formData.append('stability', stability.toString());
+      formData.append('similarity_boost', similarityBoost.toString());
+      formData.append('style', style.toString());
+      formData.append('use_speaker_boost', 'true');
+      
+      // Add speed and pitch parameters
+      formData.append('speed', speed.toString());
+      formData.append('pitch', pitch.toString());
+      
+      formData.append('output_format', 'mp3_44100_128');
+      
+      debugLog('Form data prepared', {
+        voice_id: selectedVoice,
+        model_id: 'eleven_multilingual_v2',
+        text_length: text.length,
+        stability,
+        similarity_boost: similarityBoost,
+        style,
+        speed,
+        pitch
+      });
+      
+      // Call the backend API
+      const AUDIO_API_URL = process.env.NEXT_PUBLIC_AUDIO_API_URL || 'http://localhost:3001/api/audio';
+      const endpoint = `${AUDIO_API_URL}/generate`;
+      debugLog('Sending request to', endpoint);
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      debugLog('Response received', { 
+        status: response.status, 
+        statusText: response.statusText,
+        ok: response.ok
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        debugLog('Error response', errorText);
+        throw new Error(`Failed to generate audio: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      debugLog('Success response', data);
+      
+      // Set the audio URL
+      if (data.audio_url) {
+        debugLog('Audio URL received', data.audio_url);
+        
+        // Make sure the URL is absolute
+        let audioUrl = data.audio_url;
+        
+        if (!audioUrl.startsWith('http')) {
+          // Use the same base URL as the API
+          const baseUrl = process.env.NEXT_PUBLIC_AUDIO_API_URL || 'http://localhost:3001';
+          // Remove /api/audio from the base URL if it's included
+          const baseUrlWithoutPath = baseUrl.endsWith('/api/audio') 
+            ? baseUrl.substring(0, baseUrl.length - '/api/audio'.length)
+            : baseUrl;
+          
+          audioUrl = `${baseUrlWithoutPath}${audioUrl}`;
+          debugLog('Converted to absolute URL', audioUrl);
+        }
+        
+        // Create audio element for the generated audio
+        const audioElement = new Audio(audioUrl);
+        
+        // Apply speed directly to the audio element for client-side playback adjustment
+        audioElement.playbackRate = speed;
+        
+        // Preload the audio
+        audioElement.preload = 'auto';
+        
+        // Add event listeners
+        audioElement.addEventListener('loadedmetadata', () => {
+          debugLog('Audio loaded metadata', { 
+            duration: audioElement.duration,
+            src: audioElement.src
+          });
+          setDuration(audioElement.duration);
+        });
+        
+        audioElement.addEventListener('error', (e) => {
+          debugLog('Audio element error', { 
+            error: e,
+            code: audioElement.error?.code,
+            message: audioElement.error?.message
+          });
+          toast({
+            title: "Audio Error",
+            description: `Failed to load audio: ${audioElement.error?.message || 'Unknown error'}`,
+            variant: "destructive"
+          });
+        });
+        
+        audioElement.addEventListener('ended', () => {
+          debugLog('Audio playback ended');
+          setIsPlaying(false);
+        });
+        
+        audioElement.addEventListener('timeupdate', () => {
+          setCurrentTime(audioElement.currentTime);
+        });
+        
+        // Test if the audio URL is accessible
+        fetch(audioUrl, { method: 'HEAD' })
+          .then(response => {
+            debugLog('Audio URL accessibility check', { 
+              status: response.status,
+              ok: response.ok,
+              contentType: response.headers.get('content-type')
+            });
+          })
+          .catch(error => {
+            debugLog('Audio URL accessibility error', { error });
+          });
+        
+        // Store the audio element
+        audioRefs['generated'] = audioElement;
+        setHasAudio(true);
+        debugLog('Audio state updated', { hasAudio: true });
+        
+        // Preload the audio
+        audioElement.load();
+        
+        toast({
+          title: "Audio Generated",
+          description: "Your audio has been generated successfully.",
+        });
+        
+        // Auto-play the generated audio
+        playGeneratedAudio();
+      } else {
+        debugLog('No audio URL in response', data);
+        throw new Error('No audio URL returned from the server');
+      }
+    } catch (error: any) {
+      debugLog('Error generating audio', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to generate audio. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsGenerating(false);
+      debugLog('Generation process completed', { hasAudio });
+    }
+  };
+
+  // Function for default audio generation (simple generation without any special processing)
+  const generateDefaultAudio = async () => {
+    // Use the existing generateAudio function
+    await generateAudio();
+  };
+
+  // Also modify the crisp voiceover generation to auto-play after generation
+  const generateCrispVoiceover = async () => {
+    if (!text) {
+      debugLog('No text provided, aborting generation');
+      toast({
+        title: "Text Required",
+        description: "Please enter some text to generate audio.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    if (!user) {
+      debugLog('User not logged in, redirecting to login');
+      router.push('/login');
+      return;
+    }
+    
+    debugLog('Starting crisp voiceover generation', { 
+      textLength: text.length,
+      selectedVoice,
+      settings: { speed, pitch, stability, similarityBoost, style }
+    });
+    
+    setIsGenerating(true);
+    
+    try {
+      // Split text into words
+      const words = text.split(/\s+/);
+      const wordCount = words.length;
+      
+      debugLog('Text analysis', { wordCount });
+      
+      // If less than 60 words, use regular generation
+      if (wordCount <= 60) {
+        debugLog('Text is short enough for regular generation');
+        await generateAudio();
+        return;
+      }
+      
+      // Otherwise, split into chunks of approximately 60 words
+      const chunkSize = 60;
+      const chunks = [];
+      
+      for (let i = 0; i < wordCount; i += chunkSize) {
+        const chunk = words.slice(i, i + chunkSize).join(' ');
+        chunks.push(chunk);
+      }
+      
+      debugLog('Split text into chunks', { 
+        chunkCount: chunks.length, 
+        chunks: chunks.map(c => ({ length: c.length, wordCount: c.split(/\s+/).length }))
+      });
+      
+      // Generate audio for each chunk
+      const audioUrls = [];
+      
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        
+        // Update toast to show progress
+        toast({
+          title: "Generating Crisp Voiceover",
+          description: `Processing chunk ${i + 1} of ${chunks.length}...`,
+        });
+        
+        // Create form data for this chunk
+        const formData = new FormData();
+        formData.append('text', chunk);
+        formData.append('voice_id', selectedVoice);
+        formData.append('model_id', 'eleven_multilingual_v2');
+        formData.append('stability', stability.toString());
+        formData.append('similarity_boost', similarityBoost.toString());
+        formData.append('style', style.toString());
+        formData.append('use_speaker_boost', 'true');
+        formData.append('speed', speed.toString());
+        formData.append('pitch', pitch.toString());
+        formData.append('output_format', 'mp3_44100_128');
+        formData.append('is_chunk', 'true');
+        formData.append('chunk_index', i.toString());
+        formData.append('total_chunks', chunks.length.toString());
+        
+        // Call the backend API for this chunk
+        const AUDIO_API_URL = process.env.NEXT_PUBLIC_AUDIO_API_URL || 'http://localhost:3001/api/audio';
+        const endpoint = `${AUDIO_API_URL}/generate`;
+        
+        debugLog('Sending chunk request', { 
+          chunkIndex: i, 
+          chunkLength: chunk.length,
+          endpoint 
+        });
+        
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          body: formData,
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          debugLog('Error response for chunk', { chunkIndex: i, error: errorText });
+          throw new Error(`Failed to generate audio for chunk ${i + 1}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (data.audio_url) {
+          // Make sure the URL is absolute
+          let audioUrl = data.audio_url;
+          
+          if (!audioUrl.startsWith('http')) {
+            const baseUrl = process.env.NEXT_PUBLIC_AUDIO_API_URL || 'http://localhost:3001';
+            const baseUrlWithoutPath = baseUrl.endsWith('/api/audio') 
+              ? baseUrl.substring(0, baseUrl.length - '/api/audio'.length)
+              : baseUrl;
+            
+            audioUrl = `${baseUrlWithoutPath}${audioUrl}`;
+          }
+          
+          audioUrls.push(audioUrl);
+          debugLog('Added chunk audio URL', { chunkIndex: i, audioUrl });
+        } else {
+          throw new Error(`No audio URL returned for chunk ${i + 1}`);
+        }
+      }
+      
+      // Now merge all chunks
+      toast({
+        title: "Merging Audio Chunks",
+        description: "Combining all chunks into a single audio file...",
+      });
+      
+      const AUDIO_API_URL = process.env.NEXT_PUBLIC_AUDIO_API_URL || 'http://localhost:3001/api/audio';
+      const mergeEndpoint = `${AUDIO_API_URL}/merge`;
+      
+      debugLog('Sending merge request', { 
+        chunkCount: audioUrls.length,
+        mergeEndpoint 
+      });
+      
+      const mergeResponse = await fetch(mergeEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          audioUrls: audioUrls,
+          voiceId: selectedVoice,
+        }),
+      });
+      
+      if (!mergeResponse.ok) {
+        const errorText = await mergeResponse.text();
+        debugLog('Error response for merge', errorText);
+        throw new Error(`Failed to merge audio chunks: ${mergeResponse.statusText}`);
+      }
+      
+      const mergeData = await mergeResponse.json();
+      
+      if (mergeData.url) {
+        // Make sure the URL is absolute
+        let audioUrl = mergeData.url;
+        
+        if (!audioUrl.startsWith('http')) {
+          const baseUrl = process.env.NEXT_PUBLIC_AUDIO_API_URL || 'http://localhost:3001';
+          const baseUrlWithoutPath = baseUrl.endsWith('/api/audio') 
+            ? baseUrl.substring(0, baseUrl.length - '/api/audio'.length)
+            : baseUrl;
+          
+          audioUrl = `${baseUrlWithoutPath}${audioUrl}`;
+        }
+        
+        debugLog('Final merged audio URL', audioUrl);
+        
+        // Create audio element for the generated audio
+        const audioElement = new Audio(audioUrl);
+        
+        // Apply speed directly to the audio element for client-side playback adjustment
+        audioElement.playbackRate = speed;
+        
+        // Preload the audio
+        audioElement.preload = 'auto';
+        
+        // Add event listeners
+        audioElement.addEventListener('loadedmetadata', () => {
+          debugLog('Audio loaded metadata', { 
+            duration: audioElement.duration,
+            src: audioElement.src
+          });
+          setDuration(audioElement.duration);
+        });
+        
+        audioElement.addEventListener('error', (e) => {
+          debugLog('Audio element error', { 
+            error: e,
+            code: audioElement.error?.code,
+            message: audioElement.error?.message
+          });
+          toast({
+            title: "Audio Error",
+            description: `Failed to load audio: ${audioElement.error?.message || 'Unknown error'}`,
+            variant: "destructive"
+          });
+        });
+        
+        audioElement.addEventListener('ended', () => {
+          debugLog('Audio playback ended');
+          setIsPlaying(false);
+        });
+        
+        audioElement.addEventListener('timeupdate', () => {
+          setCurrentTime(audioElement.currentTime);
+        });
+        
+        // Store the audio element
+        audioRefs['generated'] = audioElement;
+        setHasAudio(true);
+        
+        // Preload the audio
+        audioElement.load();
+        
+        toast({
+          title: "Crisp Voiceover Generated",
+          description: "Your audio has been generated and merged successfully.",
+        });
+        
+        // Auto-play the generated audio
+        playGeneratedAudio();
+      } else {
+        debugLog('No merged audio URL in response', mergeData);
+        throw new Error('No merged audio URL returned from the server');
+      }
+    } catch (error: any) {
+      debugLog('Error generating crisp voiceover', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to generate crisp voiceover. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setFile(e.target.files[0]);
+    }
+  };
+
+  const togglePlayback = () => {
+    debugLog('Toggle playback called', { isPlaying, hasAudio });
+    
+    if (!hasAudio || !audioRefs['generated']) {
+      debugLog('No audio available to play');
+      toast({
+        title: "No Audio",
+        description: "Please generate audio first.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    if (isPlaying) {
+      debugLog('Pausing audio');
+      audioRefs['generated'].pause();
+      setIsPlaying(false);
+    } else {
+      debugLog('Playing audio');
+      // Ensure the audio URL is valid
+      if (!audioRefs['generated'].src) {
+        debugLog('Audio element has no source');
+        toast({
+          title: "Playback Error",
+          description: "Audio source is not available.",
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      // Try to play the audio
+      audioRefs['generated'].play().catch(err => {
+        debugLog('Error playing audio', err);
+        toast({
+          title: "Playback Error",
+          description: err.message || "Failed to play audio.",
+          variant: "destructive"
+        });
+      });
+      
+      setIsPlaying(true);
+    }
+  };
+
+  // Toggle favorite status
+  const toggleFavorite = async (voiceId: string) => {
+    debugLog('Toggle favorite called', { voiceId, currentFavorites: favorites });
+    
+    if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please log in to save favorites",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    try {
+      const isFavorite = favorites.includes(voiceId);
+      debugLog('Current favorite status', { voiceId, isFavorite });
+      
+      // Update favorites state
+      let newFavorites;
+      if (isFavorite) {
+        debugLog('Removing from favorites', voiceId);
+        newFavorites = favorites.filter(id => id !== voiceId);
+      } else {
+        debugLog('Adding to favorites', voiceId);
+        newFavorites = [...favorites, voiceId];
+      }
+      
+      // Update state
+      setFavorites(newFavorites);
+      
+      // Save to localStorage
+      localStorage.setItem('audioFavorites', JSON.stringify(newFavorites));
+      
+      toast({
+        title: isFavorite ? "Removed from Favorites" : "Added to Favorites",
+        description: `Voice has been ${isFavorite ? 'removed from' : 'added to'} your favorites`,
+      });
+    } catch (error) {
+      console.error('Error updating favorites:', error);
+      
+      toast({
+        title: "Error",
+        description: "Failed to update favorites. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Set page title
+  useEffect(() => {
+    const pageTitleEvent = new CustomEvent('updatePageTitle', {
+      detail: {
+        badge: 'Audio',
+        title: 'Audio Generator & Enhancer',
+        description: 'Generate AI voiceovers and enhance audio quality',
+        extraContent: (
+          <div className="text-xs text-muted-foreground">
+            <p>Voices loaded: {voices.length}</p>
+            <p>Loading state: {isLoadingVoices ? 'Loading...' : 'Done'}</p>
+          </div>
+        )
+      }
+    });
+    window.dispatchEvent(pageTitleEvent);
+  }, [voices.length, isLoadingVoices]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background">
+        <Loader2 className="h-12 w-12 text-primary animate-spin mb-4" />
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    router.push('/login');
+    return null;
+  }
+
+  return (
+    <DashboardLayout>
+      <div className="container mx-auto px-4 py-4">
+        <Tabs defaultValue="generate" onValueChange={setActiveTab}>
+          <TabsList className="mb-6">
+            <TabsTrigger value="generate">Generate Voiceover</TabsTrigger>
+            <TabsTrigger value="enhance">Enhance Audio</TabsTrigger>
+            <TabsTrigger value="browser">Voice Browser</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="generate" className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card className="border border-border/50 shadow-sm">
+                <CardHeader className="bg-muted/30">
+                  <CardTitle>Script Input</CardTitle>
+                  <CardDescription>
+                    Enter your script to generate a voiceover
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <div className="space-y-4">
+                    <Textarea
+                      placeholder="Enter your script here..."
+                      className="min-h-80 resize-none"
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                    />
+                    <div className="flex justify-between items-center text-xs text-muted-foreground">
+                      <div className="flex space-x-4">
+                        <div>{wordCount} words</div>
+                        <div>{text.length} characters</div>
+                      </div>
+                      <div>
+                        {Math.ceil(text.length / 150)} seconds (approx.)
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <Button variant="outline" size="sm" onClick={() => router.push('/scriptwriting')}>
+                        <FileText className="mr-2 h-4 w-4" />
+                        Import from Script
+                      </Button>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-end space-x-4">
+                          <div className="flex items-center space-x-2">
+                            <Label htmlFor="generation-mode" className="text-xs">Generation Mode:</Label>
+                            <Select
+                              value={generationMode}
+                              onValueChange={(value) => setGenerationMode(value as 'default' | 'crisp')}
+                            >
+                              <SelectTrigger id="generation-mode" className="w-[130px] h-8">
+                                <SelectValue placeholder="Select mode" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="default">
+                                  <div className="flex items-center">
+                                    <Music className="h-3.5 w-3.5 mr-2" />
+                                    <span>Default</span>
+                                  </div>
+                                </SelectItem>
+                                <SelectItem value="crisp">
+                                  <div className="flex items-center">
+                                    <Sparkles className="h-3.5 w-3.5 mr-2" />
+                                    <span>Crisp</span>
+                                  </div>
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <Button 
+                          onClick={handleGenerateAudio} 
+                          className="bg-primary text-primary-foreground hover:bg-primary/90 w-full"
+                          disabled={!text || isGenerating}
+                        >
+                          {isGenerating ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Generating...
+                            </>
+                          ) : (
+                            <>
+                              <Wand2 className="mr-2 h-4 w-4" />
+                              Generate Audio
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Card className="border border-border/50 shadow-sm">
+                <CardHeader>
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <CardTitle className="flex items-center">
+                        <Music className="mr-2 h-5 w-5 text-primary" />
+                        Voice Settings
+                      </CardTitle>
+                      <CardDescription>
+                        Customize the voice for your audio
+                      </CardDescription>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 p-0"
+                      onClick={() => {
+                        if (selectedVoice) {
+                          toggleFavorite(selectedVoice);
+                        }
+                      }}
+                    >
+                      <Heart 
+                        className={`h-5 w-5 ${selectedVoice && voices.find(v => v.voice_id === selectedVoice)?.isFavorite ? 'fill-primary text-primary' : 'text-muted-foreground'}`} 
+                      />
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="voice">Selected Voice</Label>
+                      <Select
+                        value={selectedVoice}
+                        onValueChange={setSelectedVoice}
+                      >
+                        <SelectTrigger id="voice">
+                          <SelectValue placeholder="Select a voice" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectLabel>Favorites</SelectLabel>
+                            {voices.filter(voice => voice.isFavorite).map((voice) => (
+                              <CustomSelectItem 
+                                key={voice.voice_id} 
+                                value={voice.voice_id} 
+                                className={`${selectedVoice === voice.voice_id ? 'font-medium text-primary' : ''}`}
+                              >
+                                <span>{voice.name}</span>
+                              </CustomSelectItem>
+                            ))}
+                          </SelectGroup>
+                          <SelectGroup>
+                            <SelectLabel>All Voices</SelectLabel>
+                            {getFilteredVoices().filter(voice => !voice.isFavorite).map((voice) => (
+                              <CustomSelectItem 
+                                key={voice.voice_id} 
+                                value={voice.voice_id} 
+                                className={`${selectedVoice === voice.voice_id ? 'font-medium text-primary' : ''}`}
+                              >
+                                <span>{voice.name}</span>
+                              </CustomSelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        {selectedVoice ? 
+                          voices.find(v => v.voice_id === selectedVoice)?.description || 'No description available' : 
+                          'Select a voice to generate audio'
+                        }
+                      </p>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <Label htmlFor="speed">Speed: {speed.toFixed(1)}x</Label>
+                      </div>
+                      <Slider
+                        id="speed"
+                        min={0.5}
+                        max={2.0}
+                        step={0.1}
+                        value={[speed]}
+                        onValueChange={(value) => setSpeed(value[0])}
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <Label htmlFor="pitch">Pitch: {pitch.toFixed(1)}</Label>
+                      </div>
+                      <Slider
+                        id="pitch"
+                        min={0.5}
+                        max={1.5}
+                        step={0.1}
+                        value={[pitch]}
+                        onValueChange={(value) => setPitch(value[0])}
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <Label htmlFor="stability">Stability: {stability.toFixed(2)}</Label>
+                      </div>
+                      <Slider
+                        id="stability"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={[stability]}
+                        onValueChange={(value) => setStability(value[0])}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Lower values make the voice more expressive with more variability
+                      </p>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <Label htmlFor="similarity">Similarity Boost: {similarityBoost.toFixed(2)}</Label>
+                      </div>
+                      <Slider
+                        id="similarity"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={[similarityBoost]}
+                        onValueChange={(value) => setSimilarityBoost(value[0])}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Higher values make the voice sound more like the original
+                      </p>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <Label htmlFor="style">Style: {style.toFixed(1)}</Label>
+                      </div>
+                      <Slider
+                        id="style"
+                        min={0}
+                        max={1}
+                        step={0.1}
+                        value={[style]}
+                        onValueChange={(value) => setStyle(value[0])}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Higher values enhance the style of the voice
+                      </p>
+                    </div>
+                    
+                    <div className="flex items-center space-x-2">
+                      <Switch id="remove-silence" />
+                      <Label htmlFor="remove-silence">Remove long pauses</Label>
+                    </div>
+                    
+                    <div className="flex items-center space-x-2">
+                      <Switch id="add-emphasis" />
+                      <Label htmlFor="add-emphasis">Add natural emphasis</Label>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {hasAudio && (
+              <Card className="border border-border/50 shadow-sm">
+                <CardHeader>
+                  <CardTitle className="flex items-center">
+                    <Volume2 className="mr-2 h-5 w-5 text-primary" />
+                    Generated Audio
+                  </CardTitle>
+                  <CardDescription>
+                    Preview and download your generated audio
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="bg-muted/30 rounded-lg p-4 flex flex-col space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center">
+                          <Button 
+                            variant="outline" 
+                            size="icon" 
+                            className="h-10 w-10 rounded-full mr-4"
+                            onClick={togglePlayback}
+                          >
+                            {isPlaying ? (
+                              <Pause className="h-4 w-4" />
+                            ) : (
+                              <Play className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <div>
+                            <p className="font-medium">Generated Voiceover</p>
+                            <p className="text-sm text-muted-foreground">
+                              {duration ? 
+                                `${Math.floor(currentTime / 60)}:${Math.floor(currentTime % 60).toString().padStart(2, '0')} / 
+                                 ${Math.floor(duration / 60)}:${Math.floor(duration % 60).toString().padStart(2, '0')}` : 
+                                'Loading...'}
+                            </p>
+                          </div>
+                        </div>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            if (audioRefs['generated']?.src) {
+                              const link = document.createElement('a');
+                              link.href = audioRefs['generated'].src;
+                              link.download = `visionvox_audio_${Date.now()}.mp3`;
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                            }
+                          }}
+                        >
+                          <Download className="mr-2 h-4 w-4" />
+                          Download
+                        </Button>
+                      </div>
+                      
+                      {/* Audio progress bar */}
+                      <div className="w-full">
+                        <div className="relative h-2 w-full bg-muted rounded-full overflow-hidden">
+                          <div 
+                            className="absolute h-full bg-primary transition-all duration-100"
+                            style={{ width: `${(currentTime / (duration || 1)) * 100}%` }}
+                          ></div>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max={duration || 100}
+                          value={currentTime}
+                          onChange={(e) => {
+                            const newTime = parseFloat(e.target.value);
+                            if (audioRefs['generated']) {
+                              audioRefs['generated'].currentTime = newTime;
+                              setCurrentTime(newTime);
+                            }
+                          }}
+                          className="absolute w-full h-2 opacity-0 cursor-pointer -mt-2"
+                          style={{ margin: 0 }}
+                        />
+                        <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                          <span>
+                            {Math.floor(currentTime / 60)}:{Math.floor(currentTime % 60).toString().padStart(2, '0')}
+                          </span>
+                          <span>
+                            {Math.floor(duration / 60)}:{Math.floor(duration % 60).toString().padStart(2, '0')}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+          
+          <TabsContent value="enhance">
+            <Card className="border border-border/50 shadow-sm">
+              <CardHeader>
+                <CardTitle className="flex items-center">
+                  <Upload className="mr-2 h-5 w-5 text-primary" />
+                  Upload Audio
+                </CardTitle>
+                <CardDescription>
+                  Upload an audio file to enhance its quality
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="border-2 border-dashed border-border/50 rounded-lg p-6 text-center">
+                  <input
+                    type="file"
+                    id="audio-upload"
+                    className="hidden"
+                    accept="audio/*"
+                    onChange={handleFileChange}
+                  />
+                  <label
+                    htmlFor="audio-upload"
+                    className="cursor-pointer flex flex-col items-center justify-center"
+                  >
+                    <Mic className="h-12 w-12 text-muted-foreground mb-4" />
+                    <p className="text-muted-foreground mb-2">
+                      {file ? file.name : 'Drag and drop an audio file here, or click to browse'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Supports MP3, WAV, M4A (max 100MB)
+                    </p>
+                  </label>
+                </div>
+                
+                {file && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-2">
+                          <Switch id="noise-reduction" defaultChecked />
+                          <Label htmlFor="noise-reduction">Noise Reduction</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Switch id="normalize-volume" defaultChecked />
+                          <Label htmlFor="normalize-volume">Normalize Volume</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Switch id="remove-silence" defaultChecked />
+                          <Label htmlFor="remove-silence">Remove Silence</Label>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center space-x-2">
+                          <Switch id="enhance-clarity" defaultChecked />
+                          <Label htmlFor="enhance-clarity">Enhance Clarity</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Switch id="eq-voice" defaultChecked />
+                          <Label htmlFor="eq-voice">EQ for Voice</Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Switch id="compress-dynamic" defaultChecked />
+                          <Label htmlFor="compress-dynamic">Compress Dynamics</Label>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
+                      <Wand2 className="mr-2 h-4 w-4" />
+                      Enhance Audio
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="browser" className="space-y-4">
+            <Card className="border border-border/50 shadow-sm">
+              <CardHeader className="bg-muted/30">
+                <CardTitle>Voice Browser</CardTitle>
+                <CardDescription>
+                  Browse and select from our library of AI voices
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-6">
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        type="search"
+                        placeholder="Search voices..."
+                        className="pl-8"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant={showFavoritesOnly ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+                        className={showFavoritesOnly ? "bg-primary text-primary-foreground" : ""}
+                      >
+                        <Heart className={`mr-1 h-4 w-4 ${showFavoritesOnly ? "fill-current" : ""}`} />
+                        Favorites
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="outline" size="sm">
+                            <Filter className="mr-1 h-4 w-4" />
+                            Filters
+                            {Object.values(activeFilters).some(arr => arr.length > 0) && (
+                              <span className="ml-1 flex h-2 w-2 rounded-full bg-primary"></span>
+                            )}
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56">
+                          <DropdownMenuLabel>Filter by</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          
+                          <DropdownMenuSub>
+                            <DropdownMenuSubTrigger>
+                              <Users2 className="mr-2 h-4 w-4" />
+                              <span>Gender</span>
+                              {activeFilters.gender.length > 0 && (
+                                <span className="ml-auto flex h-2 w-2 rounded-full bg-primary"></span>
+                              )}
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent>
+                              <DropdownMenuCheckboxItem
+                                checked={activeFilters.gender.includes('male')}
+                                onCheckedChange={() => toggleFilter('gender', 'male')}
+                              >
+                                Male
+                              </DropdownMenuCheckboxItem>
+                              <DropdownMenuCheckboxItem
+                                checked={activeFilters.gender.includes('female')}
+                                onCheckedChange={() => toggleFilter('gender', 'female')}
+                              >
+                                Female
+                              </DropdownMenuCheckboxItem>
+                              <DropdownMenuCheckboxItem
+                                checked={activeFilters.gender.includes('neutral')}
+                                onCheckedChange={() => toggleFilter('gender', 'neutral')}
+                              >
+                                Neutral
+                              </DropdownMenuCheckboxItem>
+                            </DropdownMenuSubContent>
+                          </DropdownMenuSub>
+                          
+                          <DropdownMenuSub>
+                            <DropdownMenuSubTrigger>
+                              <Globe className="mr-2 h-4 w-4" />
+                              <span>Accent</span>
+                              {activeFilters.accent.length > 0 && (
+                                <span className="ml-auto flex h-2 w-2 rounded-full bg-primary"></span>
+                              )}
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent>
+                              <DropdownMenuCheckboxItem
+                                checked={activeFilters.accent.includes('american')}
+                                onCheckedChange={() => toggleFilter('accent', 'american')}
+                              >
+                                American
+                              </DropdownMenuCheckboxItem>
+                              <DropdownMenuCheckboxItem
+                                checked={activeFilters.accent.includes('british')}
+                                onCheckedChange={() => toggleFilter('accent', 'british')}
+                              >
+                                British
+                              </DropdownMenuCheckboxItem>
+                              <DropdownMenuCheckboxItem
+                                checked={activeFilters.accent.includes('australian')}
+                                onCheckedChange={() => toggleFilter('accent', 'australian')}
+                              >
+                                Australian
+                              </DropdownMenuCheckboxItem>
+                              <DropdownMenuCheckboxItem
+                                checked={activeFilters.accent.includes('indian')}
+                                onCheckedChange={() => toggleFilter('accent', 'indian')}
+                              >
+                                Indian
+                              </DropdownMenuCheckboxItem>
+                            </DropdownMenuSubContent>
+                          </DropdownMenuSub>
+                          
+                          <DropdownMenuSub>
+                            <DropdownMenuSubTrigger>
+                              <CalendarDays className="mr-2 h-4 w-4" />
+                              <span>Age</span>
+                              {activeFilters.age.length > 0 && (
+                                <span className="ml-auto flex h-2 w-2 rounded-full bg-primary"></span>
+                              )}
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent>
+                              <DropdownMenuCheckboxItem
+                                checked={activeFilters.age.includes('young')}
+                                onCheckedChange={() => toggleFilter('age', 'young')}
+                              >
+                                Young
+                              </DropdownMenuCheckboxItem>
+                              <DropdownMenuCheckboxItem
+                                checked={activeFilters.age.includes('middle-aged')}
+                                onCheckedChange={() => toggleFilter('age', 'middle-aged')}
+                              >
+                                Middle-aged
+                              </DropdownMenuCheckboxItem>
+                              <DropdownMenuCheckboxItem
+                                checked={activeFilters.age.includes('senior')}
+                                onCheckedChange={() => toggleFilter('age', 'senior')}
+                              >
+                                Senior
+                              </DropdownMenuCheckboxItem>
+                            </DropdownMenuSubContent>
+                          </DropdownMenuSub>
+                          
+                          <DropdownMenuSub>
+                            <DropdownMenuSubTrigger>
+                              <Tags className="mr-2 h-4 w-4" />
+                              <span>Category</span>
+                              {activeFilters.category.length > 0 && (
+                                <span className="ml-auto flex h-2 w-2 rounded-full bg-primary"></span>
+                              )}
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent>
+                              <DropdownMenuCheckboxItem
+                                checked={activeFilters.category.includes('professional')}
+                                onCheckedChange={() => toggleFilter('category', 'professional')}
+                              >
+                                Professional
+                              </DropdownMenuCheckboxItem>
+                              <DropdownMenuCheckboxItem
+                                checked={activeFilters.category.includes('casual')}
+                                onCheckedChange={() => toggleFilter('category', 'casual')}
+                              >
+                                Casual
+                              </DropdownMenuCheckboxItem>
+                              <DropdownMenuCheckboxItem
+                                checked={activeFilters.category.includes('character')}
+                                onCheckedChange={() => toggleFilter('category', 'character')}
+                              >
+                                Character
+                              </DropdownMenuCheckboxItem>
+                            </DropdownMenuSubContent>
+                          </DropdownMenuSub>
+                          
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={clearFilters}>
+                            <X className="mr-2 h-4 w-4" />
+                            Clear all filters
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                  
+                  {isLoadingVoices ? (
+                    <div className="flex flex-col items-center justify-center py-8">
+                      <Loader2 className="h-8 w-8 text-primary animate-spin mb-4" />
+                      <p className="text-muted-foreground">Loading voices...</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {getFilteredVoices().map((voice) => (
+                        <div 
+                          key={voice.voice_id} 
+                          className={`relative rounded-lg border p-4 hover:border-primary/50 transition-colors ${
+                            selectedVoice === voice.voice_id ? 'border-primary bg-primary/5' : 'border-border/50'
+                          }`}
+                        >
+                          <div className="absolute top-3 right-3">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 rounded-full"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFavorite(voice.voice_id);
+                              }}
+                            >
+                              <Heart 
+                                className={`h-4 w-4 ${voice.isFavorite ? 'fill-primary text-primary' : 'text-muted-foreground'}`} 
+                              />
+                            </Button>
+                          </div>
+                          <div className="flex flex-col h-full">
+                            <div className="mb-2">
+                              <h3 className="font-medium">{voice.name}</h3>
+                              <p className="text-sm text-muted-foreground line-clamp-2">{voice.description || 'No description available'}</p>
+                            </div>
+                            <div className="flex flex-wrap gap-1 my-2">
+                              {voice.gender && (
+                                <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold">
+                                  {voice.gender}
+                                </span>
+                              )}
+                              {voice.accent && (
+                                <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold">
+                                  {voice.accent}
+                                </span>
+                              )}
+                              {voice.category && (
+                                <span className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold">
+                                  {voice.category}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-auto pt-2 flex justify-between items-center">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  playVoiceSample(voice.voice_id);
+                                }}
+                              >
+                                {playingSample === voice.voice_id ? (
+                                  <>
+                                    <Pause className="mr-1 h-3 w-3" />
+                                    Stop
+                                  </>
+                                ) : (
+                                  <>
+                                    <Play className="mr-1 h-3 w-3" />
+                                    Sample
+                                  </>
+                                )}
+                              </Button>
+                              <Button
+                                variant="default"
+                                size="sm"
+                                className="text-xs"
+                                onClick={() => setSelectedVoice(voice.voice_id)}
+                              >
+                                <Check className={`mr-1 h-3 w-3 ${selectedVoice === voice.voice_id ? 'opacity-100' : 'opacity-0'}`} />
+                                {selectedVoice === voice.voice_id ? 'Selected' : 'Select'}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </DashboardLayout>
+  );
+} 

@@ -1,0 +1,267 @@
+import { useState, useEffect } from "react";
+import { Search, Upload } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
+import { useEditorContext } from "../../../contexts/editor-context";
+import { useTimelinePositioning } from "../../../hooks/use-timeline-positioning";
+
+import { usePexelsVideos } from "../../../hooks/use-pexels-video";
+import { useAspectRatio } from "../../../hooks/use-aspect-ratio";
+import { useTimeline } from "../../../contexts/timeline-context";
+import { ClipOverlay, Overlay, OverlayType } from "../../../types";
+import { VideoDetails } from "./video-details";
+import { FileUpload } from "../../ui/file-upload";
+import { useFileUpload } from "../../../hooks/use-file-upload";
+import { UploadedFilesGrid } from "../../ui/uploaded-files-grid";
+
+interface PexelsVideoFile {
+  quality: string;
+  link: string;
+}
+
+interface PexelsVideo {
+  id: number | string;
+  image: string;
+  video_files: PexelsVideoFile[];
+}
+
+/**
+ * VideoOverlayPanel is a component that provides video search and management functionality.
+ * It allows users to:
+ * - Search and browse videos from the Pexels API
+ * - Upload videos from their device
+ * - Add videos to the timeline as overlays
+ * - Manage video properties when a video overlay is selected
+ *
+ * The component has two main states:
+ * 1. Search/Browse/Upload mode: Shows tabs for searching Pexels or uploading videos
+ * 2. Edit mode: Shows video details panel when a video overlay is selected
+ *
+ * @component
+ * @example
+ * ```tsx
+ * <VideoOverlayPanel />
+ * ```
+ */
+export const VideoOverlayPanel: React.FC = () => {
+  const [searchQuery, setSearchQuery] = useState("");
+  const { videos, isLoading, fetchVideos } = usePexelsVideos();
+  const {
+    addOverlay,
+    overlays,
+    durationInFrames,
+    selectedOverlayId,
+    changeOverlay,
+  } = useEditorContext();
+  const { findNextAvailablePosition } = useTimelinePositioning();
+  const { getAspectRatioDimensions } = useAspectRatio();
+  const { visibleRows } = useTimeline();
+  const [localOverlay, setLocalOverlay] = useState<Overlay | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("pexels");
+  
+  // File upload state and handlers
+  const {
+    isUploading,
+    uploadedFiles,
+    error: uploadError,
+    handleFileUpload,
+    getOverlayTypeFromMimeType
+  } = useFileUpload();
+
+  useEffect(() => {
+    if (selectedOverlayId === null) {
+      setLocalOverlay(null);
+      return;
+    }
+
+    const selectedOverlay = overlays.find(
+      (overlay) => overlay.id === selectedOverlayId
+    );
+
+    if (selectedOverlay?.type === OverlayType.VIDEO) {
+      setLocalOverlay(selectedOverlay);
+    }
+  }, [selectedOverlayId, overlays]);
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      fetchVideos(searchQuery);
+    }
+  };
+
+  const handleAddClip = (video: PexelsVideo) => {
+    const { width, height } = getAspectRatioDimensions();
+
+    const { from, row } = findNextAvailablePosition(
+      overlays,
+      visibleRows,
+      durationInFrames
+    );
+
+    // Find the best quality video file (prioritize UHD > HD > SD)
+    const videoFile =
+      video.video_files.find(
+        (file: PexelsVideoFile) => file.quality === "uhd"
+      ) ||
+      video.video_files.find(
+        (file: PexelsVideoFile) => file.quality === "hd"
+      ) ||
+      video.video_files.find(
+        (file: PexelsVideoFile) => file.quality === "sd"
+      ) ||
+      video.video_files[0]; // Fallback to first file if no matches
+
+    const newOverlay: Overlay = {
+      left: 0,
+      top: 0,
+      width,
+      height,
+      durationInFrames: 200,
+      from,
+      id: Date.now(),
+      rotation: 0,
+      row,
+      isDragging: false,
+      type: OverlayType.VIDEO,
+      content: video.image,
+      src: videoFile?.link ?? "",
+      videoStartTime: 0,
+      styles: {
+        opacity: 1,
+        zIndex: 100,
+        transform: "none",
+        objectFit: "cover",
+      },
+    };
+
+    addOverlay(newOverlay);
+  };
+
+  const handleAddUploadedVideo = (file: any) => {
+    if (!file.type.startsWith("video/")) return;
+    
+    const { width, height } = getAspectRatioDimensions();
+    const { from, row } = findNextAvailablePosition(
+      overlays,
+      visibleRows,
+      durationInFrames
+    );
+
+    const newOverlay: Overlay = {
+      left: 0,
+      top: 0,
+      width,
+      height,
+      durationInFrames: file.duration ? Math.floor(file.duration * 30) : 200, // 30fps
+      from,
+      id: Date.now(),
+      rotation: 0,
+      row,
+      isDragging: false,
+      type: OverlayType.VIDEO,
+      content: file.thumbnail || "",
+      src: file.url,
+      videoStartTime: 0,
+      styles: {
+        opacity: 1,
+        zIndex: 100,
+        transform: "none",
+        objectFit: "cover",
+      },
+    };
+
+    addOverlay(newOverlay);
+  };
+
+  const handleUpdateOverlay = (updatedOverlay: Overlay) => {
+    setLocalOverlay(updatedOverlay);
+    changeOverlay(updatedOverlay.id, updatedOverlay);
+  };
+
+  return (
+    <div className="flex flex-col gap-4 p-4 bg-gray-100/40 dark:bg-gray-900/40 h-full">
+      {!localOverlay ? (
+        <Tabs defaultValue="pexels" value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid grid-cols-2 mb-4">
+            <TabsTrigger value="pexels">Pexels Videos</TabsTrigger>
+            <TabsTrigger value="upload">Upload Videos</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="pexels" className="space-y-4">
+            <form onSubmit={handleSearch} className="flex gap-2">
+              <Input
+                placeholder="Search videos..."
+                value={searchQuery}
+                className="bg-white dark:bg-gray-800 border-gray-200 dark:border-white/5 text-gray-900 dark:text-zinc-200 placeholder:text-gray-500 dark:placeholder:text-gray-400 focus-visible:ring-blue-400"
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <Button
+                type="submit"
+                variant="default"
+                disabled={isLoading}
+                className="bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-zinc-200 border-gray-200 dark:border-white/5"
+              >
+                <Search className="h-4 w-4" />
+              </Button>
+            </form>
+
+            <div className="grid grid-cols-2 gap-3">
+              {isLoading ? (
+                Array.from({ length: 16 }).map((_, index) => (
+                  <div
+                    key={`skeleton-${index}`}
+                    className="relative aspect-video bg-gray-200 dark:bg-gray-800 animate-pulse rounded-sm"
+                  />
+                ))
+              ) : videos.length > 0 ? (
+                videos.map((video) => (
+                  <button
+                    key={video.id}
+                    className="relative aspect-video cursor-pointer border border-transparent hover:border-white rounded-md"
+                    onClick={() => handleAddClip(video)}
+                  >
+                    <div className="relative">
+                      <img
+                        src={video.image}
+                        alt={`Video thumbnail ${video.id}`}
+                        className="rounded-sm object-cover w-full h-full hover:opacity-60 transition-opacity duration-200"
+                      />
+                      <div className="absolute inset-0 bg-black/20 opacity-0 hover:opacity-100 transition-opacity duration-200" />
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <div className="col-span-2 flex flex-col items-center justify-center py-8 text-gray-500">
+                  <p>Search for videos to add to your project</p>
+                </div>
+              )}
+            </div>
+          </TabsContent>
+          
+          <TabsContent value="upload" className="space-y-4">
+            <FileUpload 
+              onFilesSelected={handleFileUpload}
+              accept="video/*"
+              isUploading={isUploading}
+              error={uploadError}
+            />
+            
+            <UploadedFilesGrid 
+              files={uploadedFiles.filter(file => file.type.startsWith("video/"))}
+              onFileClick={handleAddUploadedVideo}
+              isLoading={isUploading}
+            />
+          </TabsContent>
+        </Tabs>
+      ) : (
+        <VideoDetails
+          localOverlay={localOverlay as ClipOverlay}
+          setLocalOverlay={handleUpdateOverlay}
+        />
+      )}
+    </div>
+  );
+};
