@@ -1,0 +1,3 @@
+ClientID:495092057900-hehqv43dm0tirl4kirpk9n2m8fckrh21.apps.googleusercontent.com
+ClientSecret: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
+GoogleConsoleAPIKey:AIzaSyAOePtWMS-Kqrw1ttkgqcRuQq2ueVqCCj4

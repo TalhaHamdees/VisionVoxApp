@@ -34,7 +34,11 @@ const handler = async (req, res) => {
       use_speaker_boost = true,
       output_format = 'mp3_44100_128',
       speed = 1.0,
-      pitch = 1.0
+      pitch = 1.0,
+      remove_silence = false,
+      silence_threshold = 0.5,
+      silence_detection_level = -30,
+      normalize_audio = false
     } = req.body;
 
     console.log('📝 Request parameters:');
@@ -46,6 +50,10 @@ const handler = async (req, res) => {
     console.log('- Output format:', output_format);
     console.log('- Speed:', speed);
     console.log('- Pitch:', pitch);
+    console.log('- Remove silence:', remove_silence);
+    console.log('- Silence threshold:', silence_threshold, 'seconds');
+    console.log('- Silence detection level:', silence_detection_level, 'dB');
+    console.log('- Normalize audio:', normalize_audio);
 
     // Get content from either text or script_content parameter
     let contentToConvert = text || script_content;
@@ -89,7 +97,11 @@ const handler = async (req, res) => {
       use_speaker_boost: Boolean(use_speaker_boost),
       output_format,
       speed: parseFloat(speed),
-      pitch: parseFloat(pitch)
+      pitch: parseFloat(pitch),
+      remove_silence: remove_silence === 'true' || remove_silence === true,
+      silence_threshold: parseFloat(silence_threshold),
+      silence_detection_level: parseFloat(silence_detection_level),
+      normalize_audio: normalize_audio === 'true' || normalize_audio === true
     });
 
     console.log('✅ Audio generation successful');
@@ -117,6 +129,11 @@ const handler = async (req, res) => {
       duration: null,
       file_size: fileStats.size
     };
+    
+    // If there's an original audio file (different from the processed one), include it in the response
+    if (result.original_filename && result.original_filename !== result.filename) {
+      responseData.original_audio_url = `${baseUrl}/api/audio/stream/${result.original_filename}`;
+    }
     
     console.log('📤 Sending response to client:', responseData);
     return res.status(200).json(responseData);

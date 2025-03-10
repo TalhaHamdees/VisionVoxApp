@@ -10,13 +10,33 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "VisionVox | AI Video Creation Platform",
   description: "Create professional videos with AI-powered scriptwriting, editing, subtitles, and more.",
+  manifest: "/manifest.json",
   icons: {
     icon: [
       {
-        url: "/favicon/VisionVoxFavicon.png",
+        url: "/favicon.ico",
+        sizes: "any"
+      },
+      {
+        url: "/favicon/VisionVoxFavicon.png?v=2",
         type: "image/png",
+        sizes: "500x500"
       }
     ],
+    shortcut: [
+      {
+        url: "/favicon/VisionVoxFavicon.png?v=2",
+        type: "image/png",
+        sizes: "500x500"
+      }
+    ],
+    apple: [
+      {
+        url: "/favicon/VisionVoxFavicon.png?v=2",
+        type: "image/png",
+        sizes: "500x500"
+      }
+    ]
   },
 };
 

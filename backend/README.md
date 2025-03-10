@@ -183,4 +183,28 @@ The audio generation feature in the VisionVox frontend connects to this backend 
 - If you encounter CORS issues, make sure the frontend origin is properly configured in the backend's CORS middleware.
 - Check that the ElevenLabs API key is correctly set in the `.env` file.
 - Ensure the MongoDB server is running and accessible.
-- If audio generation fails, verify your ElevenLabs API key and subscription status. 
+- If audio generation fails, verify your ElevenLabs API key and subscription status.
+
+## Maintenance Scripts (Archived)
+
+The following maintenance scripts were previously part of this codebase but have been removed after their one-time tasks were completed:
+
+### cleanup.js (Removed)
+
+This script was used for a one-time cleanup of invalid user records in the MongoDB database. It performed the following tasks:
+- Connected to the MongoDB database (visionvox2)
+- Identified users with invalid email formats using regex patterns
+- Deleted these invalid user records
+- Specifically targeted and deleted a user with the email "umer@gmai"
+
+The script is no longer needed as the application now includes proper validation to prevent invalid email formats.
+
+### migrate-db.js (Removed)
+
+This script was used for a one-time migration of data from an old database to a new one. It performed the following tasks:
+- Connected to MongoDB
+- Copied all collections and documents from 'visionvox' database to 'visionvox2' database
+- Dropped existing collections in the destination database before copying
+- Reported on the migration progress
+
+The migration has been completed, and the application now uses the new database structure. 

@@ -20,12 +20,26 @@ const generateAudioHandler = require('./api/audio/generate');
 const streamAudioHandler = require('./api/audio/stream');
 const mergeAudioHandler = require('./api/audio/merge');
 
+// Import Image Enhancement API routes
+const imageEnhancementRouter = require('./api/image-enhancement/enhance');
+
+// Import Subtitles API routes
+const subtitlesGenerateRouter = require('./api/subtitles/generate');
+const subtitlesApplyRouter = require('./api/subtitles/apply');
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: ['http://localhost:3000', process.env.FRONTEND_URL || '*'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  credentials: true
+}));
 app.use(express.json());
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // API Routes
 app.post('/api/register', registerHandler);
@@ -43,6 +57,13 @@ app.post('/api/audio/generate', generateAudioHandler);
 app.post('/api/audio/script-to-audio/:sessionId', generateAudioHandler);
 app.get('/api/audio/stream/:filename', streamAudioHandler);
 app.post('/api/audio/merge', mergeAudioHandler);
+
+// Image Enhancement API Routes
+app.use('/api/image-enhancement', imageEnhancementRouter);
+
+// Subtitles API Routes
+app.use('/api/subtitles/generate', subtitlesGenerateRouter);
+app.use('/api/subtitles/apply', subtitlesApplyRouter);
 
 // Start server
 app.listen(PORT, () => {

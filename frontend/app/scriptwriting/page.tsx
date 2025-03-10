@@ -85,57 +85,58 @@ export default function ScriptwritingPage() {
   const [savedScripts, setSavedScripts] = useState<SavedScript[]>([]);
   const [showSavedScripts, setShowSavedScripts] = useState(false);
   const [backendError, setBackendError] = useState<string | null>(null);
-  const [voices, setVoices] = useState<Voice[]>([]);
-  const [models, setModels] = useState<Model[]>([]);
-  const [selectedVoice, setSelectedVoice] = useState('');
-  const [selectedModel, setSelectedModel] = useState('eleven_multilingual_v2');
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const audioRef = React.useRef<HTMLAudioElement | null>(null);
-  const [analysis, setAnalysis] = useState<any>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [wordCount, setWordCount] = useState<number | null>(null);
+  const [isLoadingSavedScripts, setIsLoadingSavedScripts] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [wordCount, setWordCount] = useState(0);
+  const [charCount, setCharCount] = useState(0);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [isBackendReady, setIsBackendReady] = useState(false);
   const [refinementPrompt, setRefinementPrompt] = useState('');
   const [showAnalysis, setShowAnalysis] = useState(false);
-
-  // Audio generation state
-  const [stability, setStability] = useState<number>(0.5);
-  const [similarityBoost, setSimilarityBoost] = useState<number>(0.75);
-  const [style, setStyle] = useState<number>(0);
-  const [useSpeakerBoost, setUseSpeakerBoost] = useState<boolean>(true);
-  const [showVoiceSettings, setShowVoiceSettings] = useState<boolean>(false);
+  const [analysis, setAnalysis] = useState<any>(null);
 
   // Check if backend is running
-  useEffect(() => {
-    const checkBackendStatus = async () => {
-      try {
-        const response = await fetch(`${SCRIPT_API_URL}/health`, { 
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-          // Set a timeout to avoid long waiting times
-          signal: AbortSignal.timeout(3000)
-        });
-        
-        if (response.ok) {
-          setIsBackendReady(true);
-          setBackendError(null);
-          console.log('Script generation service is running');
-        } else {
-          setIsBackendReady(false);
-          setBackendError('Script generation service is not responding correctly');
-        }
-      } catch (error) {
-        console.error('Error checking script generation service status:', error);
+  const checkBackendStatus = async () => {
+    try {
+      // Access the script backend using the SCRIPT_API_URL constant
+      const response = await fetch(`${SCRIPT_API_URL}/health`);
+      if (response.ok) {
+        setIsBackendReady(true);
+        setBackendError(null);
+      } else {
         setIsBackendReady(false);
-        setBackendError('Cannot connect to the script generation service');
+        setBackendError('Backend service is not responding properly.');
       }
-    };
+    } catch (error) {
+      console.error('Error checking backend status:', error);
+      setIsBackendReady(false);
+      setBackendError('Cannot connect to backend service.');
+    }
+  };
 
-    checkBackendStatus();
-  }, []);
+  // Fetch session ID for the current user
+  const fetchSessionId = async () => {
+    if (!user) return;
+    
+    try {
+      // Generate a local session ID instead of calling the API
+      const localSessionId = `session_${user.id}_${Date.now()}`;
+      setSessionId(localSessionId);
+      
+      // Store in localStorage for persistence
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('visionvox_session_id', localSessionId);
+      }
+    } catch (error) {
+      console.error('Error creating session:', error);
+      toast({
+        title: "Error",
+        description: "Failed to create session. Some features may be limited.",
+        variant: "destructive",
+      });
+    }
+  };
 
   // Load saved scripts from localStorage on component mount
   useEffect(() => {
@@ -154,48 +155,6 @@ export default function ScriptwritingPage() {
 
     loadSavedScripts();
   }, []);
-
-  // Fetch available voices and models on component mount
-  useEffect(() => {
-    const fetchVoicesAndModels = async () => {
-      try {
-        // Fetch voices from the main backend
-        const voicesResponse = await fetch(`${AUDIO_API_URL}/voices`);
-        if (!voicesResponse.ok) {
-          throw new Error(`Failed to fetch voices: ${voicesResponse.statusText}`);
-        }
-        const voicesData = await voicesResponse.json();
-        setVoices(voicesData);
-        
-        // Set default voice if available
-        if (voicesData.length > 0) {
-          setSelectedVoice(voicesData[0].voice_id);
-        }
-        
-        // Fetch models from the main backend
-        const modelsResponse = await fetch(`${AUDIO_API_URL}/models`);
-        if (!modelsResponse.ok) {
-          throw new Error(`Failed to fetch models: ${modelsResponse.statusText}`);
-        }
-        const modelsData = await modelsResponse.json();
-        setModels(modelsData);
-        
-        // Set default model if available
-        if (modelsData.length > 0) {
-          setSelectedModel(modelsData[0].model_id);
-        }
-      } catch (error) {
-        console.error('Error fetching voices and models:', error);
-        toast({
-          title: "Error",
-          description: "Failed to fetch voices and models. Some features may be limited.",
-          variant: "destructive",
-        });
-      }
-    };
-    
-    fetchVoicesAndModels();
-  }, [isBackendReady]);
 
   // Set page title
   useEffect(() => {
@@ -511,123 +470,61 @@ export default function ScriptwritingPage() {
     }
   };
 
-  // Function to generate audio from the current script
-  const generateAudio = async () => {
-    if (!scriptContent) {
-      toast({
-        title: "Cannot Generate Audio",
-        description: "Please generate a script first.",
-        variant: "destructive",
-      });
-      return;
-    }
+  const uploadScript = () => {
+    // Create a file input element
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.txt,.md,.srt';
     
-    setIsGeneratingAudio(true);
-    
-    try {
-      // Create form data
-      const formData = new FormData();
-      formData.append('voice_id', selectedVoice);
-      formData.append('model_id', selectedModel);
-      formData.append('stability', stability.toString());
-      formData.append('similarity_boost', similarityBoost.toString());
-      formData.append('style', style.toString());
-      formData.append('use_speaker_boost', useSpeakerBoost.toString());
-      
-      // Show a toast notification that generation has started
-      toast({
-        title: "Generating Audio",
-        description: "This may take a few moments...",
-      });
-      
-      // Use the main backend API for audio generation
-      const endpoint = `${AUDIO_API_URL}/generate`;
-      
-      // Send the request to generate audio
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          text: scriptContent,
-          voice_id: selectedVoice,
-          model_id: selectedModel,
-          stability: parseFloat(stability.toString()),
-          similarity_boost: parseFloat(similarityBoost.toString()),
-          style: parseFloat(style.toString()),
-          use_speaker_boost: useSpeakerBoost
-        }),
-      });
-      
-      if (!response.ok) {
-        throw new Error(`Failed to generate audio: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      // Make sure the URL is absolute
-      let audioUrl = data.url;
-      
-      if (!audioUrl.startsWith('http')) {
-        // Use the same base URL as the API
-        const baseUrl = process.env.NEXT_PUBLIC_AUDIO_API_URL || 'http://localhost:3001';
-        // Remove /api/audio from the base URL if it's included
-        const baseUrlWithoutPath = baseUrl.endsWith('/api/audio') 
-          ? baseUrl.substring(0, baseUrl.length - '/api/audio'.length)
-          : baseUrl;
+    // Handle file selection
+    fileInput.onchange = (e) => {
+      const target = e.target as HTMLInputElement;
+      if (target.files && target.files.length > 0) {
+        const file = target.files[0];
+        const reader = new FileReader();
         
-        audioUrl = `${baseUrlWithoutPath}${audioUrl}`;
-        console.log('Converted to absolute URL', audioUrl);
+        reader.onload = (event) => {
+          if (event.target?.result) {
+            // Set the script content
+            setScriptContent(event.target.result as string);
+            toast({
+              title: "Script Uploaded",
+              description: `Successfully uploaded ${file.name}`,
+            });
+          }
+        };
+        
+        reader.onerror = () => {
+          toast({
+            title: "Upload Failed",
+            description: "Failed to read the file. Please try again.",
+            variant: "destructive",
+          });
+        };
+        
+        reader.readAsText(file);
       }
-      
-      // Set the audio URL
-      setAudioUrl(audioUrl);
-      
-      toast({
-        title: "Audio Generated",
-        description: "Your script has been converted to speech.",
-      });
-    } catch (error) {
-      console.error('Error generating audio:', error);
-      toast({
-        title: "Error",
-        description: "Failed to generate audio. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsGeneratingAudio(false);
-    }
+    };
+    
+    // Trigger the file input click
+    fileInput.click();
   };
 
-  // Function to play/pause audio
-  const toggleAudio = () => {
-    if (audioRef.current) {
-      if (isPlayingAudio) {
-        audioRef.current.pause();
+  useEffect(() => {
+    // Check if backend is ready
+    checkBackendStatus();
+    
+    // Check for existing session ID in localStorage
+    if (typeof window !== 'undefined' && user) {
+      const storedSessionId = localStorage.getItem('visionvox_session_id');
+      if (storedSessionId) {
+        setSessionId(storedSessionId);
       } else {
-        audioRef.current.play();
+        // Fetch session ID if user is logged in and no stored session exists
+        fetchSessionId();
       }
-      setIsPlayingAudio(!isPlayingAudio);
     }
-  };
-
-  // Handle audio ended event
-  const handleAudioEnded = () => {
-    setIsPlayingAudio(false);
-  };
-
-  // Function to download the generated audio
-  const downloadAudio = () => {
-    if (audioUrl) {
-      const link = document.createElement('a');
-      link.href = audioUrl;
-      link.download = `visionvox_script_audio_${Date.now()}.mp3`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
-  };
+  }, [user, loading]);
 
   if (loading) {
     return (
@@ -752,11 +649,6 @@ export default function ScriptwritingPage() {
               <CardTitle className="flex items-center">
                 <FileText className="mr-2 h-5 w-5 text-primary" />
                 Script Editor
-                {wordCount && (
-                  <span className="ml-2 text-sm font-normal text-muted-foreground">
-                    ({wordCount} words)
-                  </span>
-                )}
               </CardTitle>
               <CardDescription>
                 Edit your generated script or write one from scratch
@@ -771,266 +663,76 @@ export default function ScriptwritingPage() {
                 onChange={(e) => setScriptContent(e.target.value)}
               />
             </CardContent>
-            <CardFooter className="flex justify-between">
-              <div className="flex space-x-2">
-                <Button variant="outline" size="sm" onClick={copyToClipboard}>
-                  <Copy className="mr-2 h-4 w-4" />
-                  Copy
-                </Button>
-                <Button variant="outline" size="sm" onClick={downloadScript}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Export
-                </Button>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={analyzeScript}
-                  disabled={isAnalyzing || !scriptContent}
-                >
-                  {isAnalyzing ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <BarChart2 className="mr-2 h-4 w-4" />
-                  )}
-                  Analyze
-                </Button>
+            <CardFooter className="flex flex-col space-y-4">
+              <div className="flex justify-between w-full">
+                <div className="flex space-x-2">
+                  <Button variant="outline" size="sm" onClick={copyToClipboard}>
+                    <Copy className="mr-2 h-4 w-4" />
+                    Copy
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={downloadScript}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Export
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={uploadScript}>
+                    <FileText className="mr-2 h-4 w-4" />
+                    Upload
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={analyzeScript}
+                    disabled={isAnalyzing || !scriptContent}
+                  >
+                    {isAnalyzing ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <BarChart2 className="mr-2 h-4 w-4" />
+                    )}
+                    Analyze
+                  </Button>
+                </div>
+                <div className="flex space-x-2">
+                  <Button 
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowSavedScripts(!showSavedScripts)}
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    My Scripts
+                  </Button>
+                  <Button 
+                    size="sm"
+                    onClick={saveScript}
+                  >
+                    <Save className="mr-2 h-4 w-4" />
+                    Save
+                  </Button>
+                </div>
               </div>
-              <div className="flex space-x-2">
+              
+              {scriptContent.trim() !== '' && (
                 <Button 
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setShowSavedScripts(!showSavedScripts)}
+                  className="w-full bg-primary hover:bg-primary/90 text-primary-foreground py-6 text-lg font-medium"
+                  onClick={() => {
+                    // Save script to localStorage for audio page
+                    if (typeof window !== 'undefined') {
+                      window.localStorage.setItem('script_for_audio', scriptContent);
+                      toast({
+                        title: "Script ready for audio generation",
+                        description: "Your script has been transferred to the audio generator.",
+                      });
+                      router.push('/audio');
+                    }
+                  }}
                 >
-                  <FileText className="mr-2 h-4 w-4" />
-                  My Scripts
+                  <Volume2 className="mr-2 h-5 w-5" />
+                  Generate Audio
                 </Button>
-                <Button 
-                  size="sm"
-                  onClick={saveScript}
-                >
-                  <Save className="mr-2 h-4 w-4" />
-                  Save
-                </Button>
-              </div>
+              )}
             </CardFooter>
           </Card>
         </div>
-
-        {/* Audio Generation Section */}
-        {sessionId && (
-          <div className="mt-8">
-            <Card className="border border-border/50 shadow-sm">
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Volume2 className="mr-2 h-5 w-5 text-primary" />
-                  Text-to-Speech
-                </CardTitle>
-                <CardDescription>
-                  Convert your script to professional voiceover
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex flex-col md:flex-row gap-4">
-                    <div className="flex-1">
-                      <Label htmlFor="voice-select" className="block text-sm font-medium text-foreground mb-1">
-                        Voice
-                      </Label>
-                      <Select 
-                        value={selectedVoice} 
-                        onValueChange={setSelectedVoice}
-                      >
-                        <SelectTrigger id="voice-select" className="w-full">
-                          <SelectValue placeholder="Select a voice" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {voices.map((voice) => (
-                            <SelectItem 
-                              key={voice.voice_id} 
-                              value={voice.voice_id}
-                            >
-                              {voice.name} ({voice.gender}, {voice.accent})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="flex-1">
-                      <Label htmlFor="model-select" className="block text-sm font-medium text-foreground mb-1">
-                        Model
-                      </Label>
-                      <Select 
-                        value={selectedModel} 
-                        onValueChange={setSelectedModel}
-                      >
-                        <SelectTrigger id="model-select" className="w-full">
-                          <SelectValue placeholder="Select a model" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {models.map((model) => (
-                            <SelectItem 
-                              key={model.model_id} 
-                              value={model.model_id}
-                            >
-                              {model.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center justify-between">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={() => setShowVoiceSettings(!showVoiceSettings)}
-                    >
-                      <Sliders className="mr-2 h-4 w-4" />
-                      {showVoiceSettings ? "Hide Voice Settings" : "Show Voice Settings"}
-                    </Button>
-                  </div>
-                  
-                  {showVoiceSettings && (
-                    <div className="space-y-4 p-4 border rounded-md">
-                      <div>
-                        <div className="flex justify-between mb-1">
-                          <Label htmlFor="stability-slider" className="text-sm font-medium text-foreground">
-                            Stability: {stability}
-                          </Label>
-                        </div>
-                        <Slider
-                          id="stability-slider"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={[stability]}
-                          onValueChange={(value) => setStability(value[0])}
-                          className="w-full"
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Higher values make the voice more consistent but may sound less natural.
-                        </p>
-                      </div>
-                      
-                      <div>
-                        <div className="flex justify-between mb-1">
-                          <Label htmlFor="similarity-slider" className="text-sm font-medium text-foreground">
-                            Similarity Boost: {similarityBoost}
-                          </Label>
-                        </div>
-                        <Slider
-                          id="similarity-slider"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={[similarityBoost]}
-                          onValueChange={(value) => setSimilarityBoost(value[0])}
-                          className="w-full"
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Higher values make the voice sound more like the original voice.
-                        </p>
-                      </div>
-                      
-                      <div>
-                        <div className="flex justify-between mb-1">
-                          <Label htmlFor="style-slider" className="text-sm font-medium text-foreground">
-                            Style: {style}
-                          </Label>
-                        </div>
-                        <Slider
-                          id="style-slider"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={[style]}
-                          onValueChange={(value) => setStyle(value[0])}
-                          className="w-full"
-                        />
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Higher values enhance the style of the voice.
-                        </p>
-                      </div>
-                      
-                      <div className="flex items-center space-x-2">
-                        <Switch
-                          id="speaker-boost"
-                          checked={useSpeakerBoost}
-                          onCheckedChange={setUseSpeakerBoost}
-                        />
-                        <Label htmlFor="speaker-boost" className="text-sm font-medium text-foreground">
-                          Speaker Boost
-                        </Label>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {audioUrl && (
-                    <div className="mt-4 p-4 border rounded-md">
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-sm font-medium">Generated Audio</h3>
-                        <div className="flex space-x-2">
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={toggleAudio}
-                          >
-                            {isPlayingAudio ? (
-                              <>
-                                <Pause className="mr-2 h-4 w-4" />
-                                Pause
-                              </>
-                            ) : (
-                              <>
-                                <Play className="mr-2 h-4 w-4" />
-                                Play
-                              </>
-                            )}
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={downloadAudio}
-                          >
-                            <Download className="mr-2 h-4 w-4" />
-                            Download
-                          </Button>
-                        </div>
-                      </div>
-                      <audio 
-                        ref={audioRef} 
-                        src={audioUrl} 
-                        className="w-full mt-2" 
-                        controls 
-                        onEnded={handleAudioEnded}
-                      />
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-              <CardFooter>
-                <Button 
-                  onClick={generateAudio} 
-                  disabled={!sessionId || isGeneratingAudio || !isBackendReady}
-                  className="w-full"
-                >
-                  {isGeneratingAudio ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Generating Audio...
-                    </>
-                  ) : (
-                    <>
-                      <Volume2 className="mr-2 h-4 w-4" />
-                      Generate Audio
-                    </>
-                  )}
-                </Button>
-              </CardFooter>
-            </Card>
-          </div>
-        )}
 
         {/* Saved Scripts Dialog */}
         {showSavedScripts && (

@@ -6,6 +6,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+const ffmpeg = require('fluent-ffmpeg');
 require('dotenv').config();
 
 // Debug flag - set to true to enable detailed console logging
@@ -100,6 +101,132 @@ class ElevenLabsClient {
   }
 
   /**
+   * Process audio file with ffmpeg to remove silence or add emphasis
+   */
+  async processAudio(inputPath, options = {}) {
+    const { 
+      remove_silence, 
+      silence_threshold = 0.5, 
+      silence_detection_level = -30,
+      normalize_audio 
+    } = options;
+    
+    if (!remove_silence && !normalize_audio) {
+      console.log('ℹ️ No audio processing needed');
+      return {
+        processedPath: inputPath,
+        processedFilename: path.basename(inputPath)
+      };
+    }
+    
+    try {
+      console.log('🔧 Processing audio with options:', { 
+        remove_silence, 
+        silence_threshold, 
+        silence_detection_level,
+        normalize_audio 
+      });
+      
+      // Generate output filename
+      const inputFilename = path.basename(inputPath);
+      const outputFilename = `processed_${inputFilename}`;
+      const outputPath = path.join(this.audioOutputDir, outputFilename);
+      
+      let command = ffmpeg(inputPath);
+      
+      // Build the filter chain
+      let filterChain = [];
+      
+      // Apply silence removal if enabled
+      if (remove_silence) {
+        console.log('🔇 Applying silence removal with:');
+        console.log(`- Threshold: ${silence_threshold} seconds`);
+        console.log(`- Detection level: ${silence_detection_level} dB`);
+        
+        // Use the silenceremove filter with customizable parameters
+        // stop_periods=-1: remove all silence periods
+        // stop_duration: minimum silence duration to remove (in seconds)
+        // stop_threshold: silence detection threshold (in dB)
+        filterChain.push(`silenceremove=stop_periods=-1:stop_duration=${silence_threshold}:stop_threshold=${silence_detection_level}dB`);
+      }
+      
+      // Apply normalization to 0dB if enabled
+      if (normalize_audio) {
+        console.log('🔊 Normalizing audio to 0dB');
+        // Use loudnorm filter to normalize audio to 0dB peak
+        filterChain.push('loudnorm=I=-16:TP=0:LRA=11');
+      }
+      
+      // Apply the filters if any
+      if (filterChain.length > 0) {
+        command = command.audioFilters(filterChain);
+      }
+      
+      // Set output path
+      command = command.output(outputPath);
+      
+      // Return a promise that resolves when processing is complete
+      return new Promise((resolve, reject) => {
+        command
+          .on('start', (commandLine) => {
+            console.log('🔧 Executing ffmpeg command:', commandLine);
+          })
+          .on('progress', (progress) => {
+            if (DEBUG && progress.percent) {
+              console.log(`🔄 Processing: ${Math.round(progress.percent)}% done`);
+            }
+          })
+          .on('end', () => {
+            console.log('✅ Audio processing complete');
+            
+            // Verify the processed file exists and has content
+            if (!fs.existsSync(outputPath)) {
+              console.error('❌ Processed audio file was not created');
+              resolve({
+                processedPath: inputPath,
+                processedFilename: path.basename(inputPath)
+              });
+              return;
+            }
+            
+            const stats = fs.statSync(outputPath);
+            if (stats.size === 0) {
+              console.error('❌ Processed audio file is empty');
+              resolve({
+                processedPath: inputPath,
+                processedFilename: path.basename(inputPath)
+              });
+              return;
+            }
+            
+            console.log('- Original file:', inputPath);
+            console.log('- Processed file:', outputPath);
+            console.log('- File size:', stats.size, 'bytes');
+            
+            resolve({
+              processedPath: outputPath,
+              processedFilename: path.basename(outputPath)
+            });
+          })
+          .on('error', (err) => {
+            console.error('❌ Error processing audio:', err.message);
+            resolve({
+              processedPath: inputPath,
+              processedFilename: path.basename(inputPath)
+            });
+          })
+          .run();
+      });
+    } catch (error) {
+      console.error('❌ Error processing audio:', error.message);
+      return {
+        processedPath: inputPath,
+        processedFilename: path.basename(inputPath)
+      };
+    }
+  }
+
+  /**
    * Convert text to speech
    */
   async textToSpeech(voiceId, options = {}) {
@@ -113,7 +240,11 @@ class ElevenLabsClient {
         use_speaker_boost = true,
         output_format = 'mp3_44100_128',
         speed = 1.0,
-        pitch = 1.0
+        pitch = 1.0,
+        remove_silence = false,
+        silence_threshold = 0.5,
+        silence_detection_level = -30,
+        normalize_audio = false
       } = options;
 
       // Validate required parameters
@@ -137,7 +268,11 @@ class ElevenLabsClient {
         use_speaker_boost, 
         output_format,
         speed,
-        pitch
+        pitch,
+        remove_silence,
+        silence_threshold,
+        silence_detection_level,
+        normalize_audio
       });
 
       // Generate a unique filename
@@ -172,7 +307,11 @@ class ElevenLabsClient {
       // but we're including them in the log for clarity
       const clientSideSettings = {
         speed,
-        pitch
+        pitch,
+        remove_silence,
+        silence_threshold,
+        silence_detection_level,
+        normalize_audio
       };
       console.log('⚙️ Client-side playback settings:', clientSideSettings);
 
@@ -196,7 +335,7 @@ class ElevenLabsClient {
       response.data.pipe(writer);
 
       return new Promise((resolve, reject) => {
-        writer.on('finish', () => {
+        writer.on('finish', async () => {
           // Verify the file was created and has content
           try {
             const stats = fs.statSync(outputPath);
@@ -205,13 +344,50 @@ class ElevenLabsClient {
             
             if (stats.size === 0) {
               console.error('⚠️ Warning: Generated audio file is empty (0 bytes)');
+              resolve({
+                audio_url: `/stream/${filename}`,
+                filename: filename,
+                fileSize: stats.size,
+                duration: null
+              });
+              return;
             }
             
+            // Process audio if needed
+            const { remove_silence, silence_threshold, silence_detection_level, normalize_audio } = options;
+            if (remove_silence || normalize_audio) {
+              console.log('🔄 Post-processing audio...');
+              const result = await this.processAudio(outputPath, { 
+                remove_silence, 
+                silence_threshold,
+                silence_detection_level,
+                normalize_audio
+              });
+              
+              // If the file was processed, use the processed file
+              if (result.processedPath !== outputPath) {
+                const processedStats = fs.statSync(result.processedPath);
+                
+                console.log('✅ Using processed audio file:', result.processedFilename);
+                console.log('- File size:', processedStats.size, 'bytes');
+                
+                // Return only the processed audio URL
+                resolve({
+                  audio_url: `/stream/${result.processedFilename}`,
+                  filename: result.processedFilename,
+                  fileSize: processedStats.size,
+                  duration: null
+                });
+                return;
+              }
+            }
+            
+            // If no processing or processing failed, use the original file
             resolve({
               audio_url: `/stream/${filename}`,
               filename: filename,
               fileSize: stats.size,
-              duration: null // We don't have duration info from the API
+              duration: null
             });
           } catch (err) {
             console.error('❌ Error verifying audio file:', err);
