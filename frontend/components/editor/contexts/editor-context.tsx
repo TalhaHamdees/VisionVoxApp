@@ -1,5 +1,6 @@
 import React, { createContext, useContext, ReactNode } from "react";
 import { Overlay, AspectRatio, CaptionStyles } from "../types";
+import { ProjectState } from "../hooks/use-project-persistence";
 
 // Define the shape of the context
 interface EditorContextProps {
@@ -17,6 +18,7 @@ interface EditorContextProps {
   isPlaying: boolean; // Current playback state
   currentFrame: number; // Current frame position in the video
   playerRef: React.RefObject<any>; // Reference to the video player component
+  setCurrentFrame: (frame: number) => void; // Function to set current frame
 
   // Player Controls
   togglePlayPause: () => void; // Toggle play/pause state
@@ -60,6 +62,15 @@ interface EditorContextProps {
 
   // New resetOverlays prop
   resetOverlays: () => void;
+  
+  // Project management
+  saveProject: (name?: string) => void; // Save current project
+  loadProject: (projectId: string) => void; // Load a project by ID
+  newProject: () => void; // Create a new project
+  currentProjectName: string; // Current project name
+  setCurrentProjectName: (name: string) => void; // Update project name
+  isNewProject: boolean; // Whether this is a new unsaved project
+  getRecentProjects: () => ProjectState[]; // Get list of recent projects
 }
 
 // Create the context with undefined as default value

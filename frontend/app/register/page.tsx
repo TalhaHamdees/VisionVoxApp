@@ -62,7 +62,7 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50">
+    <div className="flex items-center justify-center min-h-screen bg-background">
       <div className="w-full max-w-md px-4">
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center">
@@ -78,10 +78,10 @@ export default function RegisterPage() {
             </span>
           </Link>
         </div>
-        <Card className="border border-gray-200 shadow-sm">
+        <Card className="border shadow-sm">
           <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl font-bold text-center text-gray-900">Create an account</CardTitle>
-            <CardDescription className="text-center text-gray-600">
+            <CardTitle className="text-2xl font-bold text-center">Create an account</CardTitle>
+            <CardDescription className="text-center">
               Enter your details to create your account
             </CardDescription>
           </CardHeader>
@@ -93,7 +93,7 @@ export default function RegisterPage() {
             )}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <label htmlFor="name" className="text-sm font-medium text-gray-700">
+                <label htmlFor="name" className="text-sm font-medium">
                   Full Name
                 </label>
                 <Input
@@ -106,7 +106,7 @@ export default function RegisterPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label htmlFor="email" className="text-sm font-medium text-gray-700">
+                <label htmlFor="email" className="text-sm font-medium">
                   Email
                 </label>
                 <Input
@@ -120,7 +120,7 @@ export default function RegisterPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label htmlFor="password" className="text-sm font-medium text-gray-700">
+                <label htmlFor="password" className="text-sm font-medium">
                   Password
                 </label>
                 <Input
@@ -134,7 +134,7 @@ export default function RegisterPage() {
                 />
               </div>
               <div className="space-y-2">
-                <label htmlFor="confirmPassword" className="text-sm font-medium text-gray-700">
+                <label htmlFor="confirmPassword" className="text-sm font-medium">
                   Confirm Password
                 </label>
                 <Input
@@ -149,7 +149,7 @@ export default function RegisterPage() {
               </div>
               <Button
                 type="submit"
-                className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+                className="w-full"
                 disabled={isSubmitting}
               >
                 {isSubmitting ? 'Creating account...' : 'Create account'}
@@ -157,7 +157,7 @@ export default function RegisterPage() {
             </form>
           </CardContent>
           <CardFooter className="flex justify-center">
-            <div className="text-sm text-gray-600">
+            <div className="text-sm text-muted-foreground">
               Already have an account?{' '}
               <Link href="/login" className="text-primary hover:underline">
                 Sign in

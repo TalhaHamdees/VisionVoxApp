@@ -6,6 +6,7 @@ type User = {
   id: string;
   name: string;
   email: string;
+  image?: string;
 };
 
 type AuthContextType = {
@@ -15,6 +16,7 @@ type AuthContextType = {
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => void;
   error: string | null;
+  updateProfile: (userData: Partial<User>) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -93,8 +95,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('user');
   };
 
+  const updateProfile = async (userData: Partial<User>) => {
+    setLoading(true);
+    setError(null);
+    try {
+      // In a real app, you would make an API call here
+      // For now, we'll just update the local storage
+      if (user) {
+        const updatedUser = { ...user, ...userData };
+        setUser(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred while updating profile');
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, error }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, error, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

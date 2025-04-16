@@ -133,4 +133,4 @@ export function SidebarNav({ collapsed: propCollapsed }: SidebarNavProps) {
       </nav>
     </TooltipProvider>
   );
-} 
+}

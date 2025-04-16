@@ -50,7 +50,7 @@ export default function ImageEnhancementPage() {
   const [originalDimensions, setOriginalDimensions] = useState<{ width: number; height: number } | null>(null)
   const [enhancedDimensions, setEnhancedDimensions] = useState<{ width: number; height: number } | null>(null)
 
-  // Comparison slider
+  // Slider position and interaction
   const [sliderPosition, setSliderPosition] = useState(50)
   const sliderContainerRef = useRef<HTMLDivElement>(null)
   const isDraggingRef = useRef(false)
@@ -85,7 +85,7 @@ export default function ImageEnhancementPage() {
       if (!response.ok) {
         const errorText = await response.text()
         console.error("Analysis failed with status:", response.status, "Error:", errorText)
-        throw new Error(`Failed to analyze image: ${response.status} ${errorText}`)
+        throw new Error('Failed to analyze image: ${response.status} ${errorText}')
       }
 
       const data = await response.json()
@@ -156,7 +156,7 @@ export default function ImageEnhancementPage() {
       if (!response.ok) {
         const errorText = await response.text()
         console.error("Enhancement failed with status:", response.status, "Error:", errorText)
-        throw new Error(`Failed to enhance image: ${response.status} ${errorText}`)
+        throw new Error('Failed to enhance image: ${response.status} ${errorText}')
       }
 
       const data = await response.json()
@@ -226,7 +226,7 @@ export default function ImageEnhancementPage() {
     // Create a link element
     const link = document.createElement("a")
     link.href = enhancedUrl
-    link.download = `enhanced-${file?.name || "image"}`
+    link.download = enhancedUrl.split("/").pop() || "image"
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -269,59 +269,70 @@ export default function ImageEnhancementPage() {
     }
   }
 
-  // Comparison slider handlers
+  // Handle slider value change from the Slider component
   const handleSliderChange = (value: number[]) => {
     setSliderPosition(value[0])
   }
 
+  // Handle mouse down on the slider
   const handleSliderMouseDown = (e: React.MouseEvent) => {
-    if (sliderContainerRef.current) {
-      isDraggingRef.current = true
-      document.addEventListener("mousemove", handleSliderMouseMove)
-      document.addEventListener("mouseup", handleSliderMouseUp)
-    }
+    e.preventDefault()
+    isDraggingRef.current = true
+    document.addEventListener("mousemove", handleSliderMouseMove)
+    document.addEventListener("mouseup", handleSliderMouseUp)
+    updateSliderPosition(e.clientX)
   }
 
+  // Handle mouse move during slider drag
   const handleSliderMouseMove = (e: MouseEvent) => {
-    if (isDraggingRef.current && sliderContainerRef.current) {
-      const container = sliderContainerRef.current
-      const rect = container.getBoundingClientRect()
-      const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width))
-      const percentage = Math.round((x / rect.width) * 100)
-      setSliderPosition(percentage)
-    }
+    if (!isDraggingRef.current) return
+    updateSliderPosition(e.clientX)
   }
 
+  // Handle mouse up after slider drag
   const handleSliderMouseUp = () => {
     isDraggingRef.current = false
     document.removeEventListener("mousemove", handleSliderMouseMove)
     document.removeEventListener("mouseup", handleSliderMouseUp)
   }
 
-  // Touch events for mobile
+  // Handle touch start on the slider
   const handleSliderTouchStart = (e: React.TouchEvent) => {
-    if (sliderContainerRef.current) {
-      isDraggingRef.current = true
-      document.addEventListener("touchmove", handleSliderTouchMove, { passive: false })
-      document.addEventListener("touchend", handleSliderTouchEnd)
-    }
+    isDraggingRef.current = true
+    document.addEventListener("touchmove", handleSliderTouchMove, { passive: false })
+    document.addEventListener("touchend", handleSliderTouchEnd)
+    updateSliderPosition(e.touches[0].clientX)
   }
 
+  // Handle touch move during slider drag
   const handleSliderTouchMove = (e: TouchEvent) => {
+    if (!isDraggingRef.current) return
     e.preventDefault()
-    if (isDraggingRef.current && sliderContainerRef.current && e.touches[0]) {
-      const container = sliderContainerRef.current
-      const rect = container.getBoundingClientRect()
-      const x = Math.max(0, Math.min(e.touches[0].clientX - rect.left, rect.width))
-      const percentage = Math.round((x / rect.width) * 100)
-      setSliderPosition(percentage)
-    }
+    updateSliderPosition(e.touches[0].clientX)
   }
 
+  // Handle touch end after slider drag
   const handleSliderTouchEnd = () => {
     isDraggingRef.current = false
     document.removeEventListener("touchmove", handleSliderTouchMove)
     document.removeEventListener("touchend", handleSliderTouchEnd)
+  }
+
+  // Update slider position based on cursor/touch position
+  const updateSliderPosition = (clientX: number) => {
+    if (!sliderContainerRef.current) return
+    
+    const rect = sliderContainerRef.current.getBoundingClientRect()
+    const containerWidth = rect.width
+    const offsetX = clientX - rect.left
+    
+    // Calculate position as percentage
+    let newPosition = (offsetX / containerWidth) * 100
+    
+    // Clamp position between 0 and 100
+    newPosition = Math.max(0, Math.min(newPosition, 100))
+    
+    setSliderPosition(newPosition)
   }
 
   // Cleanup event listeners
@@ -357,21 +368,21 @@ export default function ImageEnhancementPage() {
           {/* Main content */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Upload Card */}
-            <Card className="border border-border/50 shadow-sm">
-              <CardHeader>
+            <Card className="border border-border/50 shadow-sm transition-all duration-300 hover:shadow-md">
+              <CardHeader className="bg-muted/10">
                 <CardTitle className="flex items-center text-xl">
                   <Upload className="mr-2 h-5 w-5 text-primary" />
                   Upload Image
                 </CardTitle>
                 <CardDescription>Upload an image to upscale its resolution</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-6 pt-6">
                 {/* Upload area */}
                 <div
                   className={cn(
-                    "border-2 rounded-lg p-6 text-center transition-colors duration-200",
+                    "border-2 rounded-lg p-8 text-center transition-all duration-300",
                     dragActive
-                      ? "border-primary bg-primary/5"
+                      ? "border-primary bg-primary/5 scale-[0.99] shadow-inner"
                       : "border-dashed border-border/50 hover:border-primary/50 hover:bg-primary/5",
                   )}
                   onDragOver={handleDragOver}
@@ -386,8 +397,10 @@ export default function ImageEnhancementPage() {
                     onChange={handleFileChange}
                   />
                   <label htmlFor="image-upload" className="cursor-pointer flex flex-col items-center justify-center">
-                    <LucideImage className="h-12 w-12 text-muted-foreground mb-4" />
-                    <p className="text-muted-foreground mb-2">
+                    <div className="w-16 h-16 rounded-full bg-muted/30 flex items-center justify-center mb-4 transition-transform duration-300 hover:scale-110">
+                      <LucideImage className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                    <p className="text-muted-foreground mb-2 font-medium">
                       {file ? file.name : "Drag and drop an image here, or click to browse"}
                     </p>
                     <p className="text-xs text-muted-foreground">Supports JPG, PNG, WEBP (max 10MB)</p>
@@ -395,7 +408,10 @@ export default function ImageEnhancementPage() {
                 </div>
 
                 {previewUrl && (
-                  <div className="rounded-lg overflow-hidden border border-border/50">
+                  <div className="rounded-lg overflow-hidden border border-border/50 shadow-sm transition-all duration-300 hover:shadow-md">
+                    <div className="bg-black/5 p-1">
+                      <p className="text-xs text-muted-foreground px-2 py-1">Original Image</p>
+                    </div>
                     <img
                       src={previewUrl || "/placeholder.svg"}
                       alt="Preview"
@@ -408,8 +424,9 @@ export default function ImageEnhancementPage() {
                   <div className="flex justify-center">
                     <Button
                       onClick={enhanceImage}
-                      className="bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                      className="bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-300 shadow-sm hover:shadow-md hover:translate-y-[-1px]"
                       disabled={isEnhancing}
+                      size="lg"
                     >
                       {isEnhancing ? (
                         <>
@@ -492,11 +509,20 @@ export default function ImageEnhancementPage() {
                 </CardHeader>
                 <CardContent className="pt-6">
                   <Tabs defaultValue="comparison" className="w-full">
-                    <TabsList className="w-full mb-6 grid grid-cols-4">
-                      <TabsTrigger value="comparison">Side by Side</TabsTrigger>
-                      <TabsTrigger value="slider">Slider Comparison</TabsTrigger>
-                      <TabsTrigger value="original">Original</TabsTrigger>
-                      <TabsTrigger value="enhanced">Upscaled</TabsTrigger>
+                    <TabsList className="w-full mb-6 grid grid-cols-4 p-1 bg-muted/20">
+                      <TabsTrigger value="comparison" className="data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                        Side by Side
+                      </TabsTrigger>
+                      <TabsTrigger value="slider" className="data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                        <ArrowLeftRight className="h-4 w-4 mr-2" />
+                        Slider
+                      </TabsTrigger>
+                      <TabsTrigger value="original" className="data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                        Original
+                      </TabsTrigger>
+                      <TabsTrigger value="enhanced" className="data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                        Upscaled
+                      </TabsTrigger>
                     </TabsList>
 
                     {/* Side by Side Comparison */}
@@ -504,22 +530,24 @@ export default function ImageEnhancementPage() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <p className="text-sm font-medium">Original</p>
+                            <p className="text-sm font-medium flex items-center">
+                              <LucideImage className="h-4 w-4 mr-2 text-muted-foreground" />
+                              Original
+                            </p>
                             <Badge variant="outline" className="text-xs">
                               {originalDimensions
                                 ? `${originalDimensions.width}×${originalDimensions.height}`
                                 : "Loading..."}
                             </Badge>
                           </div>
-                          <div className="rounded-lg overflow-hidden border border-border/50 bg-black/5">
+                          <div className="rounded-lg overflow-hidden border border-border/50 bg-black/5 shadow-sm transition-all duration-300 hover:shadow-md">
                             <div
                               className="relative overflow-hidden"
-                              style={{ minHeight: "200px", maxHeight: "400px" }}
                             >
                               <img
                                 src={previewUrl! || "/placeholder.svg"}
                                 alt="Original"
-                                className="w-full h-auto object-contain max-h-[400px]"
+                                className="w-full h-auto object-contain mx-auto"
                                 style={{ maxWidth: "100%" }}
                               />
                             </div>
@@ -527,27 +555,29 @@ export default function ImageEnhancementPage() {
                         </div>
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <p className="text-sm font-medium">Upscaled</p>
+                            <p className="text-sm font-medium flex items-center">
+                              <Sparkles className="h-4 w-4 mr-2 text-primary" />
+                              Upscaled
+                            </p>
                             <Badge variant="outline" className="text-xs bg-primary/10">
                               {enhancedDimensions
                                 ? `${enhancedDimensions.width}×${enhancedDimensions.height}`
                                 : "Processing..."}
                             </Badge>
                           </div>
-                          <div className="rounded-lg overflow-hidden border border-border/50 bg-black/5">
+                          <div className="rounded-lg overflow-hidden border border-border/50 bg-black/5 shadow-sm transition-all duration-300 hover:shadow-md">
                             <div
                               className="relative overflow-hidden"
-                              style={{ minHeight: "200px", maxHeight: "400px" }}
                             >
                               {enhancedUrl ? (
                                 <img
                                   src={enhancedUrl || "/placeholder.svg"}
                                   alt="Upscaled"
-                                  className="w-full h-auto object-contain max-h-[400px]"
+                                  className="w-full h-auto object-contain mx-auto"
                                   style={{ maxWidth: "100%" }}
                                 />
                               ) : (
-                                <div className="flex items-center justify-center h-[400px] bg-muted/20">
+                                <div className="flex items-center justify-center h-[300px] bg-muted/20">
                                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                                 </div>
                               )}
@@ -558,7 +588,7 @@ export default function ImageEnhancementPage() {
                     </TabsContent>
 
                     {/* Slider Comparison */}
-                    <TabsContent value="slider">
+                    <TabsContent value="slider" className="space-y-6">
                       <div className="space-y-4">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
@@ -587,63 +617,55 @@ export default function ImageEnhancementPage() {
                           />
                         </div>
 
-                        {/* Image comparison with slider */}
+                        {/* Image comparison with slider - new implementation */}
                         <div
                           ref={sliderContainerRef}
-                          className="relative rounded-lg overflow-hidden border border-border/50 bg-black/5 cursor-col-resize"
-                          style={{ minHeight: "300px", maxHeight: "500px" }}
+                          className="relative rounded-lg overflow-hidden border border-border/50 bg-black/5 cursor-ew-resize shadow-md transition-all duration-300 hover:shadow-lg"
+                          style={{ minHeight: "300px" }}
                           onMouseDown={handleSliderMouseDown}
                           onTouchStart={handleSliderTouchStart}
                         >
                           {previewUrl && enhancedUrl ? (
                             <>
-                              {/* Original image (left side) */}
+                              {/* Enhanced image (background) */}
+                              <div className="relative w-full h-full flex justify-center">
+                                <img
+                                  src={enhancedUrl || "/placeholder.svg"}
+                                  alt="Enhanced"
+                                  className="max-w-full max-h-full object-contain"
+                                />
+                                <div className="absolute bottom-4 right-4 bg-primary/80 text-white px-3 py-1.5 rounded-full text-xs font-medium">
+                                  Upscaled
+                                </div>
+                              </div>
+
+                              {/* Original image (clipped) */}
                               <div
-                                className="absolute top-0 left-0 h-full overflow-hidden"
-                                style={{ width: `${sliderPosition}%` }}
+                                className="absolute top-0 left-0 w-full h-full overflow-hidden flex justify-center"
+                                style={{ clipPath: `inset(0 ${100 - sliderPosition}% 0 0)` }}
                               >
                                 <img
                                   src={previewUrl || "/placeholder.svg"}
                                   alt="Original"
-                                  className="h-full w-auto object-cover"
-                                  style={{
-                                    maxWidth: "none",
-                                    width: `${100 / (sliderPosition / 100)}%`,
-                                    objectPosition: "left top",
-                                  }}
+                                  className="max-w-full max-h-full object-contain"
                                 />
-                              </div>
-
-                              {/* Enhanced image (right side) */}
-                              <div
-                                className="absolute top-0 right-0 h-full overflow-hidden"
-                                style={{ width: `${100 - sliderPosition}%`, left: `${sliderPosition}%` }}
-                              >
-                                <img
-                                  src={enhancedUrl || "/placeholder.svg"}
-                                  alt="Enhanced"
-                                  className="h-full w-auto object-cover"
-                                  style={{
-                                    maxWidth: "none",
-                                    width: `${100 / ((100 - sliderPosition) / 100)}%`,
-                                    objectPosition: "right top",
-                                    transform: `translateX(-${sliderPosition}%)`,
-                                  }}
-                                />
+                                <div className="absolute bottom-4 left-4 bg-black/60 text-white px-3 py-1.5 rounded-full text-xs font-medium">
+                                  Original
+                                </div>
                               </div>
 
                               {/* Slider handle */}
                               <div
-                                className="absolute top-0 bottom-0 w-1 bg-white shadow-md cursor-col-resize z-10"
-                                style={{ left: `${sliderPosition}%`, transform: "translateX(-50%)" }}
+                                className="absolute top-0 bottom-0 w-0.5 bg-primary shadow-md cursor-ew-resize z-10 transition-colors duration-200 hover:bg-primary/80"
+                                style={{ left: `${sliderPosition}%` }}
                               >
-                                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white shadow-lg flex items-center justify-center">
-                                  <ArrowLeftRight className="h-4 w-4 text-primary" />
+                                <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 shadow-lg flex items-center justify-center border-2 border-primary transition-all duration-200 hover:scale-110">
+                                  <ArrowLeftRight className="h-5 w-5 text-primary" />
                                 </div>
                               </div>
                             </>
                           ) : (
-                            <div className="flex items-center justify-center h-[400px] bg-muted/20">
+                            <div className="flex items-center justify-center h-[300px] bg-muted/20">
                               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                             </div>
                           )}
@@ -654,11 +676,11 @@ export default function ImageEnhancementPage() {
                     {/* Original Image */}
                     <TabsContent value="original">
                       <div className="rounded-lg overflow-hidden border border-border/50 bg-black/5">
-                        <div className="relative overflow-hidden" style={{ minHeight: "300px", maxHeight: "600px" }}>
+                        <div className="relative overflow-hidden">
                           <img
                             src={previewUrl! || "/placeholder.svg"}
                             alt="Original"
-                            className="w-full h-auto object-contain max-h-[600px] mx-auto"
+                            className="w-full h-auto object-contain mx-auto"
                             style={{ maxWidth: "100%" }}
                           />
                         </div>
@@ -669,65 +691,106 @@ export default function ImageEnhancementPage() {
                     <TabsContent value="enhanced">
                       <div className="space-y-4">
                         <div className="flex justify-between items-center">
-                          <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-2 bg-muted/20 p-1 rounded-lg">
                             <Button
-                              variant={zoomLevel === "fit" ? "default" : "outline"}
+                              variant="ghost"
                               size="sm"
+                              className={cn(
+                                "h-8 text-xs",
+                                zoomLevel === "fit" && "bg-background shadow-sm"
+                              )}
                               onClick={() => setZoomLevel("fit")}
-                              className="text-xs"
                             >
-                              Fit to Screen
+                              Fit
                             </Button>
                             <Button
-                              variant={zoomLevel === "actual" ? "default" : "outline"}
+                              variant="ghost"
                               size="sm"
+                              className={cn(
+                                "h-8 text-xs",
+                                zoomLevel === "actual" && "bg-background shadow-sm"
+                              )}
                               onClick={() => setZoomLevel("actual")}
-                              className="text-xs"
                             >
                               Actual Size
                             </Button>
                           </div>
-                          <p className="text-xs text-muted-foreground">
-                            {zoomLevel === "actual" ? "Showing actual upscaled size" : "Scaled to fit screen"}
-                          </p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5"
+                            onClick={downloadEnhancedImage}
+                            disabled={!enhancedUrl}
+                          >
+                            <Download className="h-4 w-4" />
+                            Download Upscaled Image
+                          </Button>
                         </div>
                         <div className="rounded-lg overflow-hidden border border-border/50 bg-black/5">
-                          <div
-                            className={`relative overflow-${zoomLevel === "fit" ? "hidden" : "auto"}`}
-                            style={{
-                              minHeight: "300px",
-                              maxHeight: zoomLevel === "fit" ? "600px" : "600px",
+                          <div 
+                            className="relative"
+                            style={{ 
+                              minHeight: "400px",
+                              maxHeight: "600px",
+                              height: enhancedDimensions ? 
+                                Math.min(600, Math.max(400, enhancedDimensions.height)) + "px" : 
+                                "500px",
+                              overflow: zoomLevel === "actual" ? "auto" : "hidden"
                             }}
                           >
                             {enhancedUrl ? (
-                              <img
-                                src={enhancedUrl || "/placeholder.svg"}
-                                alt="Upscaled"
-                                className={`${zoomLevel === "fit" ? "w-full h-auto object-contain max-h-[600px] mx-auto" : "w-auto h-auto"}`}
-                                style={{ maxWidth: zoomLevel === "fit" ? "100%" : "none" }}
-                              />
+                              zoomLevel === "fit" ? (
+                                // Fit mode - container with centered image
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <img
+                                    src={enhancedUrl || "/placeholder.svg"}
+                                    alt="Upscaled"
+                                    className="max-w-full max-h-full object-contain"
+                                  />
+                                </div>
+                              ) : (
+                                // Actual size mode - scrollable container with full-size image
+                                <div className="inline-block min-w-min">
+                                  <img
+                                    src={enhancedUrl || "/placeholder.svg"}
+                                    alt="Upscaled"
+                                    className="w-auto h-auto"
+                                    style={{ display: "block" }}
+                                  />
+                                </div>
+                              )
                             ) : (
-                              <div className="flex items-center justify-center h-[600px] bg-muted/20">
+                              <div className="flex items-center justify-center h-full bg-muted/20">
                                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                               </div>
                             )}
                           </div>
                         </div>
+                        {zoomLevel === "actual" && enhancedDimensions && (
+                          <p className="text-xs text-muted-foreground text-center">
+                            Showing at actual size ({enhancedDimensions.width}×{enhancedDimensions.height}px). 
+                            Scroll to view the entire image.
+                          </p>
+                        )}
                       </div>
                     </TabsContent>
                   </Tabs>
                 </CardContent>
-                <CardFooter className="flex justify-end bg-muted/10 py-4">
-                  <Button
-                    className="bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-                    onClick={downloadEnhancedImage}
-                    disabled={!enhancedUrl}
-                  >
-                    <Download className="mr-2 h-4 w-4" />
-                    Download Upscaled Image
-                  </Button>
-                </CardFooter>
               </Card>
+            </div>
+          )}
+
+          {/* Download button at the bottom */}
+          {hasEnhanced && enhancedUrl && (
+            <div className="mt-6 flex justify-center">
+              <Button
+                className="bg-primary text-primary-foreground hover:bg-primary/90 transition-all duration-300 shadow-sm hover:shadow-md hover:translate-y-[-1px]"
+                onClick={downloadEnhancedImage}
+                size="lg"
+              >
+                <Download className="mr-2 h-5 w-5" />
+                Download Upscaled Image
+              </Button>
             </div>
           )}
         </div>
@@ -735,4 +798,3 @@ export default function ImageEnhancementPage() {
     </DashboardLayout>
   )
 }
-

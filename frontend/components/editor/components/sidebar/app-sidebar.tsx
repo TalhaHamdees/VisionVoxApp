@@ -1,8 +1,8 @@
-"use client";
+"use client"
 
-import * as React from "react";
-import { Film, Music, Type, Subtitles, ImageIcon } from "lucide-react";
-import Image from "next/image";
+import type * as React from "react"
+import { Film, Music, Type, Subtitles, ImageIcon } from "lucide-react"
+import Image from "next/image"
 import {
   Sidebar,
   SidebarContent,
@@ -12,21 +12,16 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar";
-import { useSidebar } from "../../contexts/sidebar-context";
-import { VideoOverlayPanel } from "../overlays/video/video-overlay-panel";
-import { TextOverlaysPanel } from "../overlays/text/text-overlays-panel";
-import SoundsPanel from "../overlays/sounds/sounds-panel";
-import Link from "next/link";
-import { OverlayType } from "../../types";
-import { CaptionsPanel } from "../overlays/captions/captions-panel";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { ImageOverlayPanel } from "../overlays/images/image-overlay-panel";
+} from "@/components/ui/sidebar"
+import { useSidebar } from "../../contexts/sidebar-context"
+import { VideoOverlayPanel } from "../overlays/video/video-overlay-panel"
+import { TextOverlaysPanel } from "../overlays/text/text-overlays-panel"
+import SoundsPanel from "../overlays/sounds/sounds-panel"
+import Link from "next/link"
+import { OverlayType } from "../../types"
+import { CaptionsPanel } from "../overlays/captions/captions-panel"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { ImageOverlayPanel } from "../overlays/images/image-overlay-panel"
 
 /**
  * AppSidebar Component
@@ -40,24 +35,24 @@ import { ImageOverlayPanel } from "../overlays/images/image-overlay-panel";
  * @param props - Props extending from the base Sidebar component
  */
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const { activePanel, setActivePanel, setIsOpen } = useSidebar();
+  const { activePanel, setActivePanel, setIsOpen } = useSidebar()
 
   const getPanelTitle = (type: OverlayType): string => {
     switch (type) {
       case OverlayType.VIDEO:
-        return "Video";
+        return "Video"
       case OverlayType.TEXT:
-        return "Text";
+        return "Text"
       case OverlayType.SOUND:
-        return "Audio";
+        return "Audio"
       case OverlayType.CAPTION:
-        return "Caption";
+        return "Caption"
       case OverlayType.IMAGE:
-        return "Image";
+        return "Image"
       default:
-        return "Unknown";
+        return "Unknown"
     }
-  };
+  }
 
   const navigationItems = [
     {
@@ -95,7 +90,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       panel: OverlayType.IMAGE,
       type: OverlayType.IMAGE,
     },
-  ];
+  ]
 
   /**
    * Renders the appropriate panel component based on the active panel selection
@@ -104,48 +99,41 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const renderActivePanel = () => {
     switch (activePanel) {
       case OverlayType.TEXT:
-        return <TextOverlaysPanel />;
+        return <TextOverlaysPanel />
       case OverlayType.SOUND:
-        return <SoundsPanel />;
+        return <SoundsPanel />
       case OverlayType.VIDEO:
-        return <VideoOverlayPanel />;
+        return <VideoOverlayPanel />
       case OverlayType.CAPTION:
-        return <CaptionsPanel />;
+        return <CaptionsPanel />
       case OverlayType.IMAGE:
-        return <ImageOverlayPanel />;
+        return <ImageOverlayPanel />
       default:
-        return null;
+        return null
     }
-  };
+  }
 
   return (
     <Sidebar
       collapsible="icon"
-      className="overflow-hidden [&>[data-sidebar=sidebar]]:flex-row border-r border-1 bg-background"
+      className="overflow-hidden [&>[data-sidebar=sidebar]]:flex-row border-r border-1 bg-white dark:bg-black"
       {...props}
     >
       {/* First sidebar */}
       <Sidebar
         collapsible="none"
-        className="!w-[calc(var(--sidebar-width-icon)_+_1px)]  bg-background border-r "
+        className="!w-[calc(var(--sidebar-width-icon)_+_1px)] bg-white dark:bg-black border-r border-gray-200 dark:border-gray-800"
       >
         <SidebarHeader className="">
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton size="lg" asChild className="md:h-8 md:p-0 ">
+              <SidebarMenuButton size="lg" asChild className="md:h-8 md:p-0">
                 <Link href="/dashboard">
-                  <div className="flex aspect-square size-8 items-center justify-center rounded-lg ">
-                    <Image
-                      src="/logo/VisionVoxLogo.png"
-                      alt="VisionVox Logo"
-                      width={24}
-                      height={24}
-                    />
+                  <div className="flex aspect-square size-8 items-center justify-center rounded-lg">
+                    <Image src="/logo/VisionVoxLogo.png" alt="VisionVox Logo" width={24} height={24} />
                   </div>
                   <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-semibold">
-                      VisionVox Editor
-                    </span>
+                    <span className="truncate font-semibold text-black dark:text-white">VisionVox Editor</span>
                   </div>
                 </Link>
               </SidebarMenuButton>
@@ -160,25 +148,23 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <TooltipTrigger asChild>
                     <SidebarMenuButton
                       onClick={() => {
-                        setActivePanel(item.panel);
-                        setIsOpen(true);
+                        setActivePanel(item.panel)
+                        setIsOpen(true)
                       }}
                       size="lg"
                       className={`flex flex-col items-center gap-2 p-1.5 ${
                         activePanel === item.panel
-                          ? "bg-primary/10 text-primary hover:bg-primary/10"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                          ? "bg-gray-100 dark:bg-gray-800 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-800"
+                          : "text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900 hover:text-black dark:hover:text-white"
                       }`}
                     >
-                      <item.icon className="h-4 w-4 text-gray-700 dark:text-white font-light" />
-                      <span className="text-[7px] font-medium leading-none">
-                        {item.title}
-                      </span>
+                      <item.icon className="h-4 w-4 text-black dark:text-white font-light" />
+                      <span className="text-[7px] font-medium leading-none">{item.title}</span>
                     </SidebarMenuButton>
                   </TooltipTrigger>
                   <TooltipContent
                     side="right"
-                    className="border bg-background text-foreground"
+                    className="border border-gray-200 dark:border-gray-800 bg-white dark:bg-black text-black dark:text-white"
                   >
                     {item.title}
                   </TooltipContent>
@@ -187,21 +173,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             ))}
           </SidebarGroup>
         </SidebarContent>
-        <SidebarFooter className="border-t ">
+        <SidebarFooter className="border-t border-gray-200 dark:border-gray-800">
           <SidebarMenu>
             <div className="flex items-center justify-between">
-              <SidebarMenuButton
-                asChild
-                className="p-1 hover:opacity-80 transition-opacity"
-              >
+              <SidebarMenuButton asChild className="p-1 hover:opacity-80 transition-opacity">
                 <Link href="/dashboard" className="flex items-center">
-                  <Image 
-                    src="/logo/VisionVoxLogo.png" 
-                    alt="VisionVox Logo" 
-                    width={20} 
-                    height={20} 
-                    className="mr-1"
-                  />
+                  <Image src="/logo/VisionVoxLogo.png" alt="VisionVox Logo" width={20} height={20} className="mr-1" />
                 </Link>
               </SidebarMenuButton>
             </div>
@@ -212,19 +189,20 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       {/* Second sidebar */}
       <Sidebar
         collapsible="none"
-        className="hidden flex-1 md:flex bg-background border-r"
+        className="hidden flex-1 md:flex bg-white dark:bg-black border-r border-gray-200 dark:border-gray-800"
       >
-        <SidebarHeader className="gap-3.5 border-b p-3">
+        <SidebarHeader className="gap-3.5 border-b border-gray-200 dark:border-gray-800 p-3">
           <div className="flex w-full items-center justify-between">
-            <div className="text-base font-medium text-foreground">
+            <div className="text-base font-medium text-black dark:text-white">
               {activePanel ? getPanelTitle(activePanel as OverlayType) : ""}
             </div>
           </div>
         </SidebarHeader>
-        <SidebarContent className="text-foreground bg-background">
+        <SidebarContent className="text-black dark:text-white bg-white dark:bg-black">
           {renderActivePanel()}
         </SidebarContent>
       </Sidebar>
     </Sidebar>
-  );
+  )
 }
+

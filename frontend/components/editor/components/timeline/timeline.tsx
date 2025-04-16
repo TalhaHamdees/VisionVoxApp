@@ -6,42 +6,43 @@
  * The timeline visualizes overlay positions and durations across video frames.
  */
 
-"use client";
+"use client"
 
-import React, { useState, useCallback, useEffect } from "react";
-import { useTimeline } from "../../contexts/timeline-context";
-import { useTimelineDragAndDrop } from "../../hooks/use-timeline-drag-and-drop";
-import { useTimelineEventHandlers } from "../../hooks/use-timeline-event-handlers";
-import { useTimelineState } from "../../hooks/use-timeline-state";
-import { Overlay } from "../../types";
-import GhostMarker from "./ghost-marker";
-import TimelineGrid from "./timeline-grid";
-import TimelineMarker from "./timeline-marker";
-import TimeMarkers from "./timeline-markers";
+import type React from "react"
+import { useState, useCallback, useEffect } from "react"
+import { useTimeline } from "../../contexts/timeline-context"
+import { useTimelineDragAndDrop } from "../../hooks/use-timeline-drag-and-drop"
+import { useTimelineEventHandlers } from "../../hooks/use-timeline-event-handlers"
+import { useTimelineState } from "../../hooks/use-timeline-state"
+import type { Overlay } from "../../types"
+import GhostMarker from "./ghost-marker"
+import TimelineGrid from "./timeline-grid"
+import TimelineMarker from "./timeline-marker"
+import TimeMarkers from "./timeline-markers"
 
 interface TimelineProps {
   /** Array of overlay objects to be displayed on the timeline */
-  overlays: Overlay[];
+  overlays: Overlay[]
   /** Total duration of the video in frames */
-  durationInFrames: number;
+  durationInFrames: number
   /** ID of the currently selected overlay */
-  selectedOverlayId: number | null;
+  selectedOverlayId: number | null
   /** Callback to update the selected overlay */
-  setSelectedOverlayId: (id: number | null) => void;
+  setSelectedOverlayId: (id: number | null) => void
   /** Current playhead position in frames */
-  currentFrame: number;
+  currentFrame: number
   /** Callback when an overlay is modified */
-  onOverlayChange: (updatedOverlay: Overlay) => void;
+  onOverlayChange: (updatedOverlay: Overlay) => void
   /** Callback to update the current frame position */
-  setCurrentFrame: (frame: number) => void;
+  setCurrentFrame: (frame: number) => void
   /** Callback for timeline click events */
-  onTimelineClick: (e: React.MouseEvent<HTMLDivElement>) => void;
+  onTimelineClick: (e: React.MouseEvent<HTMLDivElement>) => void
   /** Callback to delete an overlay */
-  onOverlayDelete: (id: number) => void;
+  onOverlayDelete: (id: number) => void
   /** Callback to duplicate an overlay */
-  onOverlayDuplicate: (id: number) => void;
+  onOverlayDuplicate: (id: number) => void
   /** Callback to split an overlay at a specific position */
-  onSplitOverlay: (id: number, splitPosition: number) => void;
+  onSplitOverlay: (id: number, splitPosition: number) => void
 }
 
 const Timeline: React.FC<TimelineProps> = ({
@@ -59,15 +60,14 @@ const Timeline: React.FC<TimelineProps> = ({
 }) => {
   // State for tracking hover position during split operations
   const [lastKnownHoverInfo, setLastKnownHoverInfo] = useState<{
-    itemId: number;
-    position: number;
-  } | null>(null);
+    itemId: number
+    position: number
+  } | null>(null)
 
-  const { visibleRows, timelineRef, zoomScale, handleWheelZoom } =
-    useTimeline();
+  const { visibleRows, timelineRef, zoomScale, handleWheelZoom } = useTimeline()
 
   // State for context menu visibility
-  const [isContextMenuOpen, setIsContextMenuOpen] = useState(false);
+  const [isContextMenuOpen, setIsContextMenuOpen] = useState(false)
 
   // Custom hooks for timeline functionality
   const {
@@ -80,135 +80,114 @@ const Timeline: React.FC<TimelineProps> = ({
     updateGhostElement,
     resetDragState,
     setGhostMarkerPosition,
-  } = useTimelineState(durationInFrames, visibleRows, timelineRef);
+  } = useTimelineState(durationInFrames, visibleRows, timelineRef)
 
-  const { handleDragStart, handleDrag, handleDragEnd } = useTimelineDragAndDrop(
-    {
-      overlays,
-      durationInFrames,
-      onOverlayChange,
-      updateGhostElement,
-      resetDragState,
-      timelineRef,
-      dragInfo,
-      maxRows: visibleRows,
-    }
-  );
+  const { handleDragStart, handleDrag, handleDragEnd } = useTimelineDragAndDrop({
+    overlays,
+    durationInFrames,
+    onOverlayChange,
+    updateGhostElement,
+    resetDragState,
+    timelineRef,
+    dragInfo,
+    maxRows: visibleRows,
+  })
 
-  const { handleMouseMove, handleTouchMove, handleTimelineMouseLeave } =
-    useTimelineEventHandlers({
-      handleDrag,
-      handleDragEnd,
-      isDragging,
-      timelineRef,
-      setGhostMarkerPosition,
-    });
+  const { handleMouseMove, handleTouchMove, handleTimelineMouseLeave } = useTimelineEventHandlers({
+    handleDrag,
+    handleDragEnd,
+    isDragging,
+    timelineRef,
+    setGhostMarkerPosition,
+  })
 
   // Event Handlers
   const combinedHandleDragStart = useCallback(
-    (
-      overlay: Overlay,
-      clientX: number,
-      clientY: number,
-      action: "move" | "resize-start" | "resize-end"
-    ) => {
-      timelineStateHandleDragStart(overlay, clientX, clientY, action);
-      handleDragStart(overlay, clientX, clientY, action);
+    (overlay: Overlay, clientX: number, clientY: number, action: "move" | "resize-start" | "resize-end") => {
+      timelineStateHandleDragStart(overlay, clientX, clientY, action)
+      handleDragStart(overlay, clientX, clientY, action)
     },
-    [timelineStateHandleDragStart, handleDragStart]
-  );
+    [timelineStateHandleDragStart, handleDragStart],
+  )
 
   const handleTimelineClick = useCallback(
     (clickPosition: number) => {
-      const newFrame = Math.round(clickPosition * durationInFrames);
-      setCurrentFrame(newFrame);
+      const newFrame = Math.round(clickPosition * durationInFrames)
+      setCurrentFrame(newFrame)
     },
-    [durationInFrames, setCurrentFrame]
-  );
+    [durationInFrames, setCurrentFrame],
+  )
 
-  const handleDeleteItem = useCallback(
-    (id: number) => onOverlayDelete(id),
-    [onOverlayDelete]
-  );
+  const handleDeleteItem = useCallback((id: number) => onOverlayDelete(id), [onOverlayDelete])
 
-  const handleDuplicateItem = useCallback(
-    (id: number) => onOverlayDuplicate(id),
-    [onOverlayDuplicate]
-  );
+  const handleDuplicateItem = useCallback((id: number) => onOverlayDuplicate(id), [onOverlayDuplicate])
 
-  const handleItemHover = useCallback(
-    (itemId: number, hoverPosition: number) => {
-      setLastKnownHoverInfo({
-        itemId,
-        position: Math.round(hoverPosition),
-      });
-    },
-    []
-  );
+  const handleItemHover = useCallback((itemId: number, hoverPosition: number) => {
+    setLastKnownHoverInfo({
+      itemId,
+      position: Math.round(hoverPosition),
+    })
+  }, [])
 
   const handleSplitItem = useCallback(
     (id: number) => {
       if (lastKnownHoverInfo?.itemId === id) {
-        onSplitOverlay(id, lastKnownHoverInfo.position);
+        onSplitOverlay(id, lastKnownHoverInfo.position)
       }
     },
-    [lastKnownHoverInfo, onSplitOverlay]
-  );
+    [lastKnownHoverInfo, onSplitOverlay],
+  )
 
-  const handleContextMenuChange = useCallback(
-    (isOpen: boolean) => setIsContextMenuOpen(isOpen),
-    []
-  );
+  const handleContextMenuChange = useCallback((isOpen: boolean) => setIsContextMenuOpen(isOpen), [])
 
   const handleRemoveGap = useCallback(
     (rowIndex: number, gapStart: number) => {
       // Find all items that come after the gap in the same row
       const overlaysToShift = overlays
-        .filter(
-          (overlay) => overlay.row === rowIndex && overlay.from > gapStart
-        )
-        .sort((a, b) => a.from - b.from);
+        .filter((overlay) => overlay.row === rowIndex && overlay.from > gapStart)
+        .sort((a, b) => a.from - b.from)
 
-      if (overlaysToShift.length === 0) return;
+      if (overlaysToShift.length === 0) return
 
       // Calculate the gap size based on the first overlay after the gap
-      const firstOverlayAfterGap = overlaysToShift[0];
-      const gapSize = firstOverlayAfterGap.from - gapStart;
+      const firstOverlayAfterGap = overlaysToShift[0]
+      const gapSize = firstOverlayAfterGap.from - gapStart
 
       // Create all updates at once
       const updates = overlaysToShift.map((overlay) => ({
         ...overlay,
         from: overlay.from - gapSize,
-      }));
+      }))
 
       // Apply all updates
-      updates.forEach((update) => onOverlayChange(update));
+      updates.forEach((update) => onOverlayChange(update))
     },
-    [overlays, onOverlayChange]
-  );
+    [overlays, onOverlayChange],
+  )
 
   useEffect(() => {
-    const element = timelineRef.current;
-    if (!element) return;
+    const element = timelineRef.current
+    if (!element) return
 
-    element.addEventListener("wheel", handleWheelZoom, { passive: false });
-    return () => element.removeEventListener("wheel", handleWheelZoom);
-  }, [handleWheelZoom]);
+    element.addEventListener("wheel", handleWheelZoom, { passive: false })
+    return () => element.removeEventListener("wheel", handleWheelZoom)
+  }, [handleWheelZoom])
 
   // Render
   return (
     <div className="flex flex-col">
       <div
-        className="relative overflow-x-auto scrollbar-hide"
+        className="relative overflow-x-auto scrollbar-hide timeline-container"
         style={{
           width: "100%",
           scrollbarWidth: "none" /* Firefox */,
           msOverflowStyle: "none" /* IE and Edge */,
         }}
+        tabIndex={0}
       >
         <div
           ref={timelineRef}
-          className="pl-2 pr-2 pb-2 relative bg-gray-900 dark:bg-gray-900 bg-white"
+          className="pl-2 pr-2 pb-2 relative bg-white dark:bg-black"
           style={{
             width: `${100 * zoomScale}%`,
             minWidth: "100%",
@@ -233,17 +212,10 @@ const Timeline: React.FC<TimelineProps> = ({
             </div>
 
             {/* Current frame indicator */}
-            <TimelineMarker
-              currentFrame={currentFrame}
-              totalDuration={durationInFrames}
-            />
+            <TimelineMarker currentFrame={currentFrame} totalDuration={durationInFrames} />
 
             {/* Drag operation visual feedback */}
-            <GhostMarker
-              position={ghostMarkerPosition}
-              isDragging={isDragging}
-              isContextMenuOpen={isContextMenuOpen}
-            />
+            <GhostMarker position={ghostMarkerPosition} isDragging={isDragging} isContextMenuOpen={isContextMenuOpen} />
 
             {/* Main timeline grid with overlays */}
             <TimelineGrid
@@ -268,7 +240,8 @@ const Timeline: React.FC<TimelineProps> = ({
         </div>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default Timeline;
+export default Timeline
+

@@ -32,7 +32,7 @@ const TimelineMarker: React.FC<TimelineMarkerProps> = React.memo(
 
     return (
       <div
-        className="absolute top-0 w-[2px] bg-red-500/90 dark:bg-red-500 pointer-events-none z-50"
+        className="absolute top-0 w-[2px] bg-gray-500/90 dark:bg-gray-400 pointer-events-none z-50"
         style={{
           left: markerPosition,
           transform: "translateX(-50%)",
@@ -46,7 +46,7 @@ const TimelineMarker: React.FC<TimelineMarkerProps> = React.memo(
           className="w-0 h-0 absolute top-[0px] left-1/2 transform -translate-x-1/2
             border-l-[5px] border-r-[5px] border-t-[8px] 
             border-l-transparent border-r-transparent 
-            border-t-red-500/90 dark:border-t-red-500"
+            border-t-gray-500/90 dark:border-t-gray-400"
           style={{ willChange: "transform" }}
         />
       </div>

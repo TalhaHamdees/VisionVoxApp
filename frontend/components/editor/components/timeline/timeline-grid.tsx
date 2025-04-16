@@ -138,7 +138,7 @@ const TimelineGrid: React.FC<TimelineGridProps> = ({
 
   return (
     <div
-      className="relative mt-3 overflow-x-auto overflow-y-hidden bg-white dark:bg-gray-900"
+      className="relative mt-3 overflow-x-auto overflow-y-hidden bg-white dark:bg-black"
       style={{ height: `${visibleRows * ROW_HEIGHT + 8}px` }}
     >
       <div className="absolute inset-0 flex flex-col space-y-2">
@@ -151,7 +151,7 @@ const TimelineGrid: React.FC<TimelineGridProps> = ({
           return (
             <div
               key={rowIndex}
-              className="flex-1 bg-slate-100/90 dark:bg-gray-800 rounded-md relative"
+              className="flex-1 bg-white dark:bg-black rounded-md relative border border-gray-200 dark:border-gray-800"
             >
               {rowItems.map((overlay, index) => (
                 <TimelineItem
@@ -201,7 +201,7 @@ const TimelineGrid: React.FC<TimelineGridProps> = ({
                 Math.floor(ghostElement.top / (100 / visibleRows)) ===
                   rowIndex && (
                   <div
-                    className="absolute inset-y-0 rounded-sm border-blue-500 dark:border-white border bg-blue-100/30 dark:bg-gray-400/30 pointer-events-none"
+                    className="absolute inset-y-0 rounded-sm border-gray-300 dark:border-gray-700 border bg-gray-100/30 dark:bg-gray-800/30 pointer-events-none"
                     style={{
                       left: `${ghostElement.left}%`,
                       width: `${Math.max(ghostElement.width, 1)}%`,

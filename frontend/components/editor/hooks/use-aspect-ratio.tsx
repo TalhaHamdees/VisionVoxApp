@@ -3,13 +3,13 @@ import { AspectRatio } from "../types";
 
 /**
  * Custom hook for managing aspect ratio and player dimensions.
- * @param initialRatio - The initial aspect ratio to use (default: "16:9")
+ * @param initialRatio - The initial aspect ratio to use (default: "9:16")
  * @param onRatioChange - Callback function to call when the aspect ratio changes (optional)
  * @returns An object containing aspect ratio state and related functions
  */
 
 export const useAspectRatio = (
-  initialRatio: AspectRatio = "16:9",
+  initialRatio: AspectRatio = "9:16",
   onRatioChange?: (ratio: AspectRatio) => void
 ) => {
   // Single source of truth for aspect ratio
@@ -24,9 +24,9 @@ export const useAspectRatio = (
   );
 
   const [playerDimensions, setPlayerDimensions] = useState({
-    width: 640,
-    height: 360,
-  }); // Default 16:9 dimensions
+    width: 360,
+    height: 640,
+  }); // Default 9:16 dimensions
 
   /**
    * Updates the player dimensions based on the container size and current aspect ratio.
@@ -78,9 +78,9 @@ export const useAspectRatio = (
       case "1:1":
         return { width: 1080, height: 1080 }; // Square Post
       case "16:9":
-        return { width: 1280, height: 720 }; // Square Post
+        return { width: 1920, height: 1080 }; // Landscape (16:9)
       default:
-        return { width: 1920, height: 1080 }; // Laptop (16:9)
+        return { width: 1080, height: 1920 }; // Default to 9:16
     }
   }, [aspectRatio]);
 

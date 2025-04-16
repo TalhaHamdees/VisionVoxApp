@@ -15,6 +15,7 @@ interface UseTimelineShortcutsProps {
  * A custom hook that sets up keyboard shortcuts for timeline controls
  *
  * Keyboard shortcuts:
+ * - Space: Play/Pause
  * - Alt + Space: Play/Pause
  * - Cmd/Ctrl + Z: Undo
  * - Cmd/Ctrl + Shift + Z or Cmd/Ctrl + Y: Redo
@@ -39,6 +40,17 @@ export const useTimelineShortcuts = ({
   zoomScale,
   setZoomScale,
 }: UseTimelineShortcutsProps) => {
+  // Space key for play/pause
+  useHotkeys(
+    "space",
+    (e) => {
+      e.preventDefault();
+      handlePlayPause();
+    },
+    { enableOnFormTags: true }
+  );
+
+  // Keep existing alt+space shortcut
   useHotkeys(
     "alt+space",
     (e) => {

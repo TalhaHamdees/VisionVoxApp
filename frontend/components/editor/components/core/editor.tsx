@@ -1,13 +1,13 @@
-"use client";
+"use client"
 
-import React from "react";
-import { EditorHeader } from "./editor-header";
+import React from "react"
+import { EditorHeader } from "./editor-header"
 
-import { useEditorContext } from "../../contexts/editor-context";
-import { TimelineControls } from "../timeline/timeline-controls";
-import { FPS } from "../../constants";
-import Timeline from "../timeline/timeline";
-import { VideoPlayer } from "./video-player";
+import { useEditorContext } from "../../contexts/editor-context"
+import { TimelineControls } from "../timeline/timeline-controls"
+import { FPS } from "../../constants"
+import Timeline from "../timeline/timeline"
+import { VideoPlayer } from "./video-player"
 
 /**
  * Main Editor Component
@@ -39,7 +39,7 @@ import { VideoPlayer } from "./video-player";
  */
 export const Editor: React.FC = () => {
   /** State to track if the current viewport is mobile-sized */
-  const [isMobile, setIsMobile] = React.useState(false);
+  const [isMobile, setIsMobile] = React.useState(false)
 
   /**
    * Effect to handle mobile detection and window resize events
@@ -47,13 +47,13 @@ export const Editor: React.FC = () => {
    */
   React.useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
+      setIsMobile(window.innerWidth < 768)
+    }
 
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
-  }, []);
+    checkMobile()
+    window.addEventListener("resize", checkMobile)
+    return () => window.removeEventListener("resize", checkMobile)
+  }, [])
 
   /**
    * Destructure values and functions from the editor context
@@ -74,7 +74,7 @@ export const Editor: React.FC = () => {
     duplicateOverlay, // Function to clone an overlay
     splitOverlay, // Function to split an overlay at current position
     durationInFrames, // Total duration in frames
-  } = useEditorContext();
+  } = useEditorContext()
 
   /**
    * Mobile fallback UI
@@ -82,19 +82,18 @@ export const Editor: React.FC = () => {
    */
   if (isMobile) {
     return (
-      <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900 p-6">
-        <div className="text-center text-gray-900 dark:text-white">
+      <div className="flex items-center justify-center h-screen bg-white dark:bg-black p-6">
+        <div className="text-center text-black dark:text-white">
           <h2 className="text-xl font-bold mb-3">React Video Editor</h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400 font-light mb-4">
-            Currently, React Video Editor is designed as a full-screen desktop
-            experience. We&apos;re actively working on making it
-            mobile-friendly! 👀
+          <p className="text-sm text-gray-700 dark:text-gray-300 font-light mb-4">
+            Currently, React Video Editor is designed as a full-screen desktop experience. We&apos;re actively working
+            on making it mobile-friendly! 👀
           </p>
-          <p className="text-sm text-gray-600 dark:text-gray-400 font-light">
+          <p className="text-sm text-gray-700 dark:text-gray-300 font-light">
             Want mobile support? Let us know by voting{" "}
             <a
               href="https://reactvideoeditor.featurebase.app/p/bulb-mobile-layout-version-2"
-              className="text-blue-600 font-medium dark:text-blue-400 hover:underline"
+              className="text-black dark:text-white font-medium underline hover:no-underline"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -104,7 +103,7 @@ export const Editor: React.FC = () => {
           </p>
         </div>
       </div>
-    );
+    )
   }
 
   /**
@@ -116,7 +115,7 @@ export const Editor: React.FC = () => {
    * 4. Timeline visualization
    */
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex flex-col h-screen bg-white dark:bg-black">
       <EditorHeader />
       <div className="flex-grow flex flex-col lg:flex-row overflow-hidden">
         <VideoPlayer playerRef={playerRef} />
@@ -142,11 +141,12 @@ export const Editor: React.FC = () => {
         onSplitOverlay={splitOverlay}
         setCurrentFrame={(frame) => {
           if (playerRef.current) {
-            playerRef.current.seekTo(frame / FPS);
+            playerRef.current.seekTo(frame / FPS)
           }
         }}
         onTimelineClick={handleTimelineClick}
       />
     </div>
-  );
-};
+  )
+}
+

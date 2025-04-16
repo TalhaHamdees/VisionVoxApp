@@ -14,7 +14,7 @@
 
 import React from "react";
 import { ClipOverlay } from "../../../types";
-import { PaintBucket, Settings } from "lucide-react";
+import { PaintBucket, Settings, ArrowLeft } from "lucide-react";
 import {
   Tabs,
   TabsContent,
@@ -23,12 +23,15 @@ import {
 } from "../../../../ui/tabs";
 import { VideoStylePanel } from "./video-style-panel";
 import { VideoSettingsPanel } from "./video-settings-panel";
+import { Button } from "@/components/ui/button";
 
 interface VideoDetailsProps {
   /** The current state of the video overlay */
   localOverlay: ClipOverlay;
   /** Callback function to update the video overlay state */
   setLocalOverlay: (overlay: ClipOverlay) => void;
+  /** Callback function to go back to video selection */
+  onBack: () => void;
 }
 
 /**
@@ -37,10 +40,12 @@ interface VideoDetailsProps {
  * @param {VideoDetailsProps} props - Component props
  * @param {ClipOverlay} props.localOverlay - Current video overlay state
  * @param {Function} props.setLocalOverlay - Function to update overlay state
+ * @param {Function} props.onBack - Function to go back to video selection
  */
 export const VideoDetails: React.FC<VideoDetailsProps> = ({
   localOverlay,
   setLocalOverlay,
+  onBack,
 }) => {
   /**
    * Updates the style properties of the video overlay
@@ -48,61 +53,58 @@ export const VideoDetails: React.FC<VideoDetailsProps> = ({
    * @param {Partial<ClipOverlay["styles"]>} updates - Style properties to update
    */
   const handleStyleChange = (updates: Partial<ClipOverlay["styles"]>) => {
-    const updatedOverlay = {
+    setLocalOverlay({
       ...localOverlay,
       styles: {
         ...localOverlay.styles,
         ...updates,
       },
-    };
-    setLocalOverlay(updatedOverlay);
+    });
   };
 
   return (
     <div className="space-y-4">
-      {/* Preview */}
-      <div className="relative aspect-[16/7] w-full overflow-hidden rounded-sm border border-gray-200 dark:border-gray-700 bg-gray-100/40 dark:bg-black/40">
-        <img
-          src={localOverlay.content}
-          alt="Video preview"
-          className="h-full w-full object-cover"
+      <div className="flex items-center justify-between mb-4">
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={onBack}
+          className="flex items-center gap-1 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          <span>Back to Videos</span>
+        </Button>
+      </div>
+
+      <div className="relative aspect-video bg-black/10 dark:bg-black/30 rounded-md overflow-hidden mb-4">
+        <video
+          src={localOverlay.src}
+          className="w-full h-full object-contain"
+          controls
         />
       </div>
 
-      {/* Settings Tabs */}
       <Tabs defaultValue="settings" className="w-full">
-        <TabsList className="w-full grid grid-cols-2 bg-gray-100/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-sm border border-gray-200 dark:border-gray-700 gap-1">
-          <TabsTrigger
-            value="settings"
-            className="data-[state=active]:bg-blue-500/20 data-[state=active]:text-gray-900 dark:data-[state=active]:text-white 
-            rounded-sm transition-all duration-200 text-gray-600 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-200 hover:bg-gray-200/50 dark:hover:bg-gray-700/50"
-          >
-            <span className="flex items-center gap-2 text-xs">
-              <Settings className="w-3 h-3" />
-              Settings
-            </span>
+        <TabsList className="grid w-full grid-cols-2 mb-4">
+          <TabsTrigger value="settings" className="flex items-center gap-1.5">
+            <Settings className="h-3.5 w-3.5" />
+            <span>Settings</span>
           </TabsTrigger>
-          <TabsTrigger
-            value="style"
-            className="data-[state=active]:bg-blue-500/20 data-[state=active]:text-gray-900 dark:data-[state=active]:text-white 
-            rounded-sm transition-all duration-200 text-gray-600 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-200 hover:bg-gray-200/50 dark:hover:bg-gray-700/50"
-          >
-            <span className="flex items-center gap-2 text-xs">
-              <PaintBucket className="w-3 h-3" />
-              Style
-            </span>
+          <TabsTrigger value="style" className="flex items-center gap-1.5">
+            <PaintBucket className="h-3.5 w-3.5" />
+            <span>Style</span>
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="style" className="space-y-4 mt-4 h-auto">
-          <VideoStylePanel
+        <TabsContent value="settings" className="space-y-4">
+          <VideoSettingsPanel
             localOverlay={localOverlay}
             handleStyleChange={handleStyleChange}
           />
         </TabsContent>
 
-        <TabsContent value="settings" className="space-y-4 mt-4">
-          <VideoSettingsPanel
+        <TabsContent value="style" className="space-y-4">
+          <VideoStylePanel
             localOverlay={localOverlay}
             handleStyleChange={handleStyleChange}
           />

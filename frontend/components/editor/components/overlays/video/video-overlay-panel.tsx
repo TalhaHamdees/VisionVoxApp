@@ -181,6 +181,11 @@ export const VideoOverlayPanel: React.FC = () => {
     changeOverlay(updatedOverlay.id, updatedOverlay);
   };
 
+  // Handler to go back to video selection
+  const handleBackToSelection = () => {
+    setLocalOverlay(null);
+  };
+
   return (
     <div className="flex flex-col gap-4 p-4 bg-gray-100/40 dark:bg-gray-900/40 h-full">
       {!localOverlay ? (
@@ -260,6 +265,7 @@ export const VideoOverlayPanel: React.FC = () => {
         <VideoDetails
           localOverlay={localOverlay as ClipOverlay}
           setLocalOverlay={handleUpdateOverlay}
+          onBack={handleBackToSelection}
         />
       )}
     </div>

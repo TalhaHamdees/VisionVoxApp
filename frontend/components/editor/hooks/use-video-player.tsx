@@ -87,5 +87,6 @@ export const useVideoPlayer = () => {
     formatTime,
     play,
     seekTo,
+    setCurrentFrame,
   };
 };

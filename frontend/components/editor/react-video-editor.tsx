@@ -17,14 +17,20 @@ import { useTimelineClick } from "./hooks/use-timeline-click";
 import { useAspectRatio } from "./hooks/use-aspect-ratio";
 import { useCompositionDuration } from "./hooks/use-composition-duration";
 import { useHistory } from "./hooks/use-history";
+import { useProjectPersistence } from "./hooks/use-project-persistence";
 
 // Types
 import { Overlay } from "./types";
 import { useRendering } from "./hooks/use-rendering";
 import { FPS } from "./constants";
 import { TimelineProvider } from "./contexts/timeline-context";
+import { useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function ReactVideoEditor() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  
   // Overlay management hooks
   const {
     overlays,
@@ -42,7 +48,7 @@ export default function ReactVideoEditor() {
   } = useOverlays();
 
   // Video player controls and state
-  const { isPlaying, currentFrame, playerRef, togglePlayPause, formatTime } =
+  const { isPlaying, currentFrame, playerRef, togglePlayPause, formatTime, setCurrentFrame } =
     useVideoPlayer();
 
   // Composition duration calculations
@@ -57,6 +63,53 @@ export default function ReactVideoEditor() {
     updatePlayerDimensions,
     getAspectRatioDimensions,
   } = useAspectRatio();
+
+  // Project persistence
+  const {
+    saveProject,
+    loadProject,
+    autoSave,
+    getRecentProjects,
+    currentProjectId,
+    currentProjectName,
+    setCurrentProjectName,
+    isNewProject
+  } = useProjectPersistence(overlays, currentFrame, aspectRatio);
+
+  // Load project on initial render if projectId is in URL
+  useEffect(() => {
+    const projectId = searchParams.get('projectId');
+    if (projectId) {
+      const project = loadProject(projectId);
+      if (project) {
+        // Apply loaded project state
+        setOverlays(project.overlays);
+        setCurrentFrame(project.currentFrame);
+        setAspectRatio(project.aspectRatio);
+        setCurrentProjectName(project.name);
+      }
+    }
+  }, [searchParams]);
+
+  // Set up beforeunload event to warn about unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (overlays.length > 0) {
+        // Auto-save before leaving
+        autoSave();
+        
+        // Show confirmation dialog
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [overlays, autoSave]);
 
   // Event handlers
   const handleOverlayChange = (updatedOverlay: Overlay) => {
@@ -82,6 +135,49 @@ export default function ReactVideoEditor() {
   // Replace history management code with hook
   const { undo, redo, canUndo, canRedo } = useHistory(overlays, setOverlays);
 
+  // Handle manual save
+  const handleSaveProject = (name?: string) => {
+    saveProject(name);
+  };
+
+  // Handle new project
+  const handleNewProject = () => {
+    // Confirm if there are unsaved changes
+    if (overlays.length > 0) {
+      if (confirm('Create a new project? Any unsaved changes will be lost.')) {
+        resetOverlays();
+        router.push('/editor');
+      }
+    } else {
+      resetOverlays();
+      router.push('/editor');
+    }
+  };
+
+  // Handle open project
+  const handleOpenProject = (projectId: string) => {
+    // Confirm if there are unsaved changes
+    if (overlays.length > 0) {
+      if (confirm('Open another project? Any unsaved changes will be lost.')) {
+        const project = loadProject(projectId);
+        if (project) {
+          setOverlays(project.overlays);
+          setCurrentFrame(project.currentFrame);
+          setAspectRatio(project.aspectRatio);
+          router.push(`/editor?projectId=${projectId}`);
+        }
+      }
+    } else {
+      const project = loadProject(projectId);
+      if (project) {
+        setOverlays(project.overlays);
+        setCurrentFrame(project.currentFrame);
+        setAspectRatio(project.aspectRatio);
+        router.push(`/editor?projectId=${projectId}`);
+      }
+    }
+  };
+
   // Combine all editor context values
   const editorContextValue = {
     // Overlay management
@@ -104,6 +200,7 @@ export default function ReactVideoEditor() {
     togglePlayPause,
     formatTime,
     handleTimelineClick,
+    setCurrentFrame,
 
     // Dimensions and duration
     aspectRatio,
@@ -128,6 +225,15 @@ export default function ReactVideoEditor() {
 
     // New style management
     updateOverlayStyles,
+    
+    // Project management
+    saveProject: handleSaveProject,
+    loadProject: handleOpenProject,
+    newProject: handleNewProject,
+    currentProjectName,
+    setCurrentProjectName,
+    isNewProject,
+    getRecentProjects,
   };
 
   return (
