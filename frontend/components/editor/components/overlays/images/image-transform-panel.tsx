@@ -18,10 +18,19 @@ import {
   ArrowUp,
   ArrowDown,
   Clock,
+  Plus,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
 import { Separator } from "@/components/ui/separator"
+
+// Define a keyframe type to store frame position and opacity value
+interface OpacityKeyframe {
+  frame: number;
+  value: number;
+  id?: string; // Add unique ID for better tracking
+}
 
 interface ImageTransformPanelProps {
   localOverlay: ImageOverlay
@@ -29,6 +38,7 @@ interface ImageTransformPanelProps {
   handlePositionChange: (updates: Partial<Pick<ImageOverlay, "left" | "top" | "rotation">>) => void
   totalFrames?: number
   currentFrame?: number
+  onKeyframeChange?: (keyframes: OpacityKeyframe[]) => void
 }
 
 type SectionKey = "position" | "scale" | "rotation" | "opacity" | "frames"
@@ -39,6 +49,7 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
   handlePositionChange,
   totalFrames = 0,
   currentFrame = 0,
+  onKeyframeChange,
 }) => {
   // Expanded panels state
   const [expanded, setExpanded] = useState<Record<SectionKey, boolean>>({
@@ -48,7 +59,7 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
     opacity: false,
     frames: false,
   })
-
+  
   // Local controlled state for each value
   const [posX, setPosX] = useState<number>(localOverlay.left)
   const [posY, setPosY] = useState<number>(localOverlay.top)
@@ -57,16 +68,26 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
   )
   const [rotationValue, setRotationValue] = useState<number>(localOverlay.rotation || 0)
   const [opacityValue, setOpacityValue] = useState<number>(localOverlay.styles.opacity ?? 1)
-
+  
   // Frame interpolation settings for opacity
   const [useFrameInterpolation, setUseFrameInterpolation] = useState<boolean>(false)
-  const [fadeInStart, setFadeInStart] = useState<number>(0)
-  const [fadeInEnd, setFadeInEnd] = useState<number>(20)
-  const [fadeOutStart, setFadeOutStart] = useState<number>(totalFrames > 50 ? totalFrames - 20 : 80)
-  const [fadeOutEnd, setFadeOutEnd] = useState<number>(totalFrames || 100)
+  
+  // Store keyframes for opacity
+  const [opacityKeyframes, setOpacityKeyframes] = useState<OpacityKeyframe[]>([])
   
   // Keep track of the last interpolated opacity to avoid unnecessary updates
   const [lastInterpolatedOpacity, setLastInterpolatedOpacity] = useState<number>(opacityValue)
+  
+  // Initialize keyframes on first load or when interpolation is enabled
+  useEffect(() => {
+    if (useFrameInterpolation && opacityKeyframes.length === 0) {
+      // Create default keyframes if none exist
+      setOpacityKeyframes([
+        { frame: 0, value: opacityValue }, // First frame
+        { frame: totalFrames || 100, value: opacityValue } // Last frame
+      ]);
+    }
+  }, [useFrameInterpolation]);
 
   // Basic linear interpolation function
   const interpolate = (
@@ -85,22 +106,109 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
     }
     return outputRange[0]
   }
-
-  // Derived opacity value based on interpolation
+  
+  // Get opacity value at a specific frame by interpolating between keyframes
   const getInterpolatedOpacity = (frame: number) => {
-    if (!useFrameInterpolation) return opacityValue
+    if (!useFrameInterpolation || opacityKeyframes.length < 2) return opacityValue
     
-    // Apply the base opacity as a multiplier to the interpolated value
-    return interpolate(
-      frame,
-      [fadeInStart, fadeInEnd, fadeOutStart, fadeOutEnd],
-      [0, 1, 1, 0]
-    ) * opacityValue
+    // Sort keyframes by frame number
+    const sortedKeyframes = [...opacityKeyframes].sort((a, b) => a.frame - b.frame)
+    
+    // Extract frame numbers and opacity values for interpolation
+    const frames = sortedKeyframes.map(kf => kf.frame)
+    const values = sortedKeyframes.map(kf => kf.value)
+    
+    // Interpolate based on current frame
+    return interpolate(frame, frames, values)
   }
   
-  // Update interpolated opacity when current frame changes
+  // Generate unique ID for keyframes
+  const generateKeyframeId = () => `kf_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+
+  // Update function to add keyframe with ID
+  const addKeyframeAtCurrentFrame = () => {
+    if (currentFrame === undefined) return
+    
+    // Check if a keyframe already exists at this position
+    const existingKeyframeIndex = opacityKeyframes.findIndex(kf => kf.frame === currentFrame)
+    
+    if (existingKeyframeIndex >= 0) {
+      // Update existing keyframe
+      const updatedKeyframes = [...opacityKeyframes];
+      updatedKeyframes[existingKeyframeIndex].value = opacityValue;
+      setOpacityKeyframes(updatedKeyframes);
+      
+      // Notify parent if needed
+      if (onKeyframeChange) {
+        onKeyframeChange(updatedKeyframes);
+      }
+    } else {
+      // Add new keyframe with ID
+      const newKeyframe = { 
+        frame: currentFrame, 
+        value: opacityValue,
+        id: generateKeyframeId()
+      };
+      
+      const newKeyframes = [...opacityKeyframes, newKeyframe];
+      setOpacityKeyframes(newKeyframes);
+      
+      // Notify parent if needed
+      if (onKeyframeChange) {
+        onKeyframeChange(newKeyframes);
+      }
+    }
+    
+    // Apply the current opacity immediately
+    setLastInterpolatedOpacity(opacityValue);
+    handleStyleChange({ opacity: opacityValue });
+  }
+  
+  // Update function to update a specific keyframe's opacity
+  const updateKeyframeOpacity = (frame: number, newOpacity: number) => {
+    const keyframeIndex = opacityKeyframes.findIndex(kf => kf.frame === frame);
+    
+    if (keyframeIndex >= 0) {
+      // Convert from percentage (0-100) to decimal (0-1)
+      const normalizedOpacity = newOpacity / 100;
+      
+      // Update the keyframe
+      const updatedKeyframes = [...opacityKeyframes];
+      updatedKeyframes[keyframeIndex].value = normalizedOpacity;
+      setOpacityKeyframes(updatedKeyframes);
+      
+      // Apply the change if we're at that keyframe
+      if (currentFrame === frame) {
+        setOpacityValue(normalizedOpacity);
+        setLastInterpolatedOpacity(normalizedOpacity);
+        handleStyleChange({ opacity: normalizedOpacity });
+      } else {
+        // Update the interpolated value at current frame
+        const interpolatedValue = getInterpolatedOpacity(currentFrame || 0);
+        setLastInterpolatedOpacity(interpolatedValue);
+        handleStyleChange({ opacity: interpolatedValue });
+      }
+      
+      // Notify parent if needed
+      if (onKeyframeChange) {
+        onKeyframeChange(updatedKeyframes);
+      }
+    }
+  };
+  
+  // Remove a keyframe
+  const removeKeyframe = (frame: number) => {
+    // Don't remove if it would leave less than 2 keyframes
+    if (opacityKeyframes.length <= 2) {
+      return
+    }
+    
+    setOpacityKeyframes(opacityKeyframes.filter(kf => kf.frame !== frame))
+  }
+  
+  // Update interpolated opacity when current frame or keyframes change
   useEffect(() => {
-    if (useFrameInterpolation && currentFrame !== undefined) {
+    if (useFrameInterpolation && currentFrame !== undefined && opacityKeyframes.length >= 2) {
       const interpolatedValue = getInterpolatedOpacity(currentFrame)
       
       // Only update if the value has changed significantly
@@ -113,29 +221,29 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
       setLastInterpolatedOpacity(opacityValue)
       handleStyleChange({ opacity: opacityValue })
     }
-  }, [currentFrame, useFrameInterpolation, fadeInStart, fadeInEnd, fadeOutStart, fadeOutEnd, opacityValue])
-
+  }, [currentFrame, useFrameInterpolation, opacityKeyframes, opacityValue])
+  
   // Sync with overlay on change
   useEffect(() => {
     setPosX(localOverlay.left)
     setPosY(localOverlay.top)
     setRotationValue(localOverlay.rotation || 0)
-    
+     
     // Only update opacity value from localOverlay if not using frame interpolation
     if (!useFrameInterpolation) {
       setOpacityValue(localOverlay.styles.opacity ?? 1)
     }
-
+  
     // Extract only the scale from transform
     const match = localOverlay.styles.transform?.match(/scale\(([^)]+)\)/)
     setScaleValue(match ? Number(match[1]) : 1)
   }, [localOverlay, useFrameInterpolation])
-
+  
   // Ensure rotation and transform stay in sync
   useEffect(() => {
     // When rotation changes, make sure transform only contains scale
     const currentScale = scaleValue
-
+  
     // Only update if transform contains rotation or is in wrong format
     const currentTransform = localOverlay.styles.transform || ""
     if (currentTransform.includes("rotate") || !currentTransform.includes("scale")) {
@@ -144,7 +252,7 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
       })
     }
   }, [localOverlay.rotation, scaleValue, handleStyleChange])
-
+  
   // When frame interpolation is toggled on/off, update opacity accordingly
   useEffect(() => {
     if (useFrameInterpolation && currentFrame !== undefined) {
@@ -158,7 +266,7 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
       handleStyleChange({ opacity: opacityValue })
     }
   }, [useFrameInterpolation])
-
+  
   // Handlers: update only relevant property
   const updatePosition = (x?: number, y?: number) => {
     if (x !== undefined) {
@@ -170,22 +278,22 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
       handlePositionChange({ top: y })
     }
   }
-
+  
   const updateScale = (percent: number) => {
     const s = percent / 100
     setScaleValue(s)
-
+  
     // Ensure we're only updating scale in transform, not affecting rotation
     handleStyleChange({ transform: `scale(${s})` })
   }
-
+  
   const updateRotation = (deg: number) => {
     setRotationValue(deg)
-
+  
     // Only update the rotation property, keeping it separate from transform
     handlePositionChange({ rotation: deg })
   }
-
+  
   const updateOpacity = (percent: number) => {
     const o = percent / 100
     setOpacityValue(o)
@@ -195,21 +303,29 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
       setLastInterpolatedOpacity(o)
       handleStyleChange({ opacity: o })
     } else if (currentFrame !== undefined) {
-      // If frame interpolation is on, we need to update the interpolated opacity
-      // while keeping the base opacity value updated
+      // If at a keyframe position, update that keyframe
+      const keyframeIndex = opacityKeyframes.findIndex(kf => kf.frame === currentFrame)
+      if (keyframeIndex >= 0) {
+        // Update the keyframe and apply the change
+        const updatedKeyframes = [...opacityKeyframes]
+        updatedKeyframes[keyframeIndex].value = o
+        setOpacityKeyframes(updatedKeyframes)
+      }
+      
+      // Apply the interpolated opacity value
       const interpolatedValue = getInterpolatedOpacity(currentFrame)
       setLastInterpolatedOpacity(interpolatedValue)
       handleStyleChange({ opacity: interpolatedValue })
     }
   }
-
+  
   const reset = {
     position: () => updatePosition(0, 0),
     scale: () => updateScale(100),
     rotation: () => updateRotation(0),
     opacity: () => updateOpacity(100),
   }
-
+  
   // Visualize the opacity curve for the preview
   const generateOpacityPreview = () => {
     if (!totalFrames) return []
@@ -232,7 +348,11 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
     
     return preview
   }
-
+  
+  // Check if current frame has a keyframe
+  const hasKeyframeAtCurrentFrame = currentFrame !== undefined && 
+    opacityKeyframes.some(kf => kf.frame === currentFrame)
+  
   const sectionClass = "mb-3 bg-background rounded-lg border border-border shadow-sm transition-all"
   const headerClass =
     "flex items-center justify-between p-3 bg-muted/30 cursor-pointer hover:bg-muted/50 rounded-t-lg transition-colors"
@@ -243,6 +363,9 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
   
   // Generate preview frames
   const opacityPreview = generateOpacityPreview()
+  
+  // Sort keyframes for display
+  const sortedKeyframes = [...opacityKeyframes].sort((a, b) => a.frame - b.frame)
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -672,79 +795,136 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
                     <Separator className="my-3" />
                     
                     <div className="space-y-4">
-                      <div>
-                        <div className={sliderLabelClass}>
-                          <span className="flex items-center gap-1">Fade In Start</span>
-                          <span className={valueClass}>Frame {fadeInStart}</span>
+                      {/* Current Playhead Position */}
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm">
+                          Current Frame: <span className="font-medium">{currentFrame}</span>
                         </div>
-                        <Slider
-                          value={[fadeInStart]}
-                          min={0}
-                          max={fadeInEnd}
-                          step={1}
-                          onValueChange={(v) => setFadeInStart(v[0])}
-                          className="flex-1"
-                          disabled={fadeInStart === fadeInEnd}
-                        />
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button 
+                              size="sm"
+                              variant={hasKeyframeAtCurrentFrame ? "destructive" : "outline"}
+                              className="gap-1"
+                              onClick={() => hasKeyframeAtCurrentFrame 
+                                ? removeKeyframe(currentFrame!) 
+                                : addKeyframeAtCurrentFrame()
+                              }
+                            >
+                              {hasKeyframeAtCurrentFrame ? (
+                                <>
+                                  <X size={14} /> Remove Keyframe
+                                </>
+                              ) : (
+                                <>
+                                  <Plus size={14} /> Add Keyframe
+                                </>
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {hasKeyframeAtCurrentFrame 
+                              ? "Remove keyframe at current position" 
+                              : "Add a keyframe at the current playhead position"
+                            }
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
                       
-                      <div>
-                        <div className={sliderLabelClass}>
-                          <span className="flex items-center gap-1">Fade In End</span>
-                          <span className={valueClass}>Frame {fadeInEnd}</span>
+                      {/* Keyframes List - with opacity editing */}
+                      <div className="border border-border/50 rounded-md p-2 bg-muted/10 mb-2">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="text-xs font-medium">Keyframes</div>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button 
+                                size="sm"
+                                variant="outline"
+                                className="h-6 px-2 text-xs"
+                                onClick={() => addKeyframeAtCurrentFrame()}
+                              >
+                                <Plus size={12} className="mr-1" /> Add Keyframe
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Add keyframe at current frame</TooltipContent>
+                          </Tooltip>
                         </div>
-                        <Slider
-                          value={[fadeInEnd]}
-                          min={fadeInStart}
-                          max={fadeOutStart}
-                          step={1}
-                          onValueChange={(v) => setFadeInEnd(v[0])}
-                          className="flex-1"
-                        />
+
+                        {sortedKeyframes.length > 0 ? (
+                          <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                            {sortedKeyframes.map((keyframe) => (
+                              <div 
+                                key={keyframe.id || keyframe.frame}
+                                className={`
+                                  flex items-center justify-between p-2 rounded-sm
+                                  ${keyframe.frame === currentFrame ? 'bg-primary/10 border border-primary/30' : 'bg-background/50 hover:bg-muted/30 border border-border/30'}
+                                `}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2 h-2 rounded-full bg-primary"></div>
+                                  <span className="text-xs">Frame {keyframe.frame}</span>
+                                </div>
+                                
+                                <div className="flex items-center gap-2">
+                                  {/* Mini opacity slider */}
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="range"
+                                      min="0"
+                                      max="100"
+                                      value={(keyframe.value * 100).toFixed(0)}
+                                      onChange={(e) => updateKeyframeOpacity(keyframe.frame, parseInt(e.target.value))}
+                                      className="w-16 h-1.5"
+                                    />
+                                    <span className="text-xs font-mono w-8 text-right">
+                                      {(keyframe.value * 100).toFixed(0)}%
+                                    </span>
+                                  </div>
+                                  
+                                  {/* Delete button */}
+                                  {opacityKeyframes.length > 2 && (
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 rounded-full hover:bg-muted hover:text-destructive"
+                                      onClick={() => removeKeyframe(keyframe.frame)}
+                                    >
+                                      <X size={12} />
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-muted-foreground text-center py-2">
+                            No keyframes added yet
+                          </div>
+                        )}
                       </div>
                       
-                      <Separator className="my-2" />
-                      
-                      <div>
-                        <div className={sliderLabelClass}>
-                          <span className="flex items-center gap-1">Fade Out Start</span>
-                          <span className={valueClass}>Frame {fadeOutStart}</span>
-                        </div>
-                        <Slider
-                          value={[fadeOutStart]}
-                          min={fadeInEnd}
-                          max={fadeOutEnd}
-                          step={1}
-                          onValueChange={(v) => setFadeOutStart(v[0])}
-                          className="flex-1"
-                        />
-                      </div>
-                      
-                      <div>
-                        <div className={sliderLabelClass}>
-                          <span className="flex items-center gap-1">Fade Out End</span>
-                          <span className={valueClass}>Frame {fadeOutEnd}</span>
-                        </div>
-                        <Slider
-                          value={[fadeOutEnd]}
-                          min={fadeOutStart}
-                          max={totalFrames || 100}
-                          step={1}
-                          onValueChange={(v) => setFadeOutEnd(v[0])}
-                          className="flex-1"
-                          disabled={fadeOutStart === fadeOutEnd}
-                        />
-                      </div>
-                      
+                      {/* Preview with timeline markers */}
                       <div className="p-3 bg-muted/20 rounded-md border border-border/50">
-                        <div className="text-xs text-muted-foreground mb-2">
-                          Opacity Preview: {currentFrame !== undefined && (
+                        <div className="text-xs text-muted-foreground mb-2 flex justify-between">
+                          <span>Opacity Preview:</span>
+                          {currentFrame !== undefined && (
                             <span className="text-primary font-medium">
                               Frame {currentFrame}: {(getInterpolatedOpacity(currentFrame) * 100).toFixed(0)}%
                             </span>
                           )}
                         </div>
-                        <div className="h-8 w-full bg-background rounded-sm overflow-hidden relative">
+                        
+                        <div className="h-10 w-full bg-background rounded-sm overflow-hidden relative">
+                          {/* Timeline grid lines for visual reference */}
+                          <div className="absolute inset-0 w-full h-full grid grid-cols-10 pointer-events-none">
+                            {Array.from({ length: 10 }).map((_, i) => (
+                              <div 
+                                key={i} 
+                                className="h-full border-l border-primary/5 first:border-l-0"
+                              />
+                            ))}
+                          </div>
+                          
                           {/* Visualize the opacity curve */}
                           <div className="absolute inset-0 flex">
                             {opacityPreview.map((item, i) => (
@@ -766,10 +946,38 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
                             ))}
                           </div>
                           
-                          <div className="flex justify-between mt-1">
-                            <div className="text-xs">0</div>
-                            <div className="text-xs">{totalFrames || 100}</div>
-                          </div>
+                          {/* Current frame indicator */}
+                          {currentFrame !== undefined && (
+                            <div 
+                              className="absolute top-0 bottom-0 w-px bg-primary/80"
+                              style={{
+                                left: `${Math.min(100, Math.max(0, (currentFrame / totalFrames) * 100))}%`,
+                                boxShadow: '0 0 4px rgba(59, 130, 246, 0.5)'
+                              }}
+                            />
+                          )}
+                          
+                          {/* Keyframe markers */}
+                          {opacityKeyframes.map((kf) => {
+                            const position = (kf.frame / totalFrames) * 100;
+                            return (
+                              <div 
+                                key={kf.id || kf.frame}
+                                className="absolute bottom-0 w-2.5 h-2.5 bg-primary rounded-full transform -translate-x-1/2 cursor-pointer"
+                                style={{
+                                  left: `${position}%`,
+                                  bottom: `${kf.value * 100}%`,
+                                  boxShadow: kf.frame === currentFrame ? '0 0 0 2px rgba(255,255,255,0.5)' : '0 0 1px rgba(0,0,0,0.5)'
+                                }}
+                                title={`Frame ${kf.frame}: ${(kf.value * 100).toFixed(0)}%`}
+                              />
+                            );
+                          })}
+                        </div>
+
+                        <div className="flex justify-between mt-1">
+                          <div className="text-xs">0</div>
+                          <div className="text-xs">{totalFrames}</div>
                         </div>
                       </div>
                     </div>
