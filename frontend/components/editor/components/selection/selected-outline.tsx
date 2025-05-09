@@ -4,6 +4,7 @@ import { ResizeHandle } from "./resize-handle";
 import { Overlay, OverlayType } from "../../types";
 import { RotateHandle } from "./rotate-handle";
 import { MAX_ROWS } from "../../constants";
+import { useEditorContext } from "../../contexts/editor-context";
 
 /**
  * SelectionOutline is a component that renders a draggable, resizable outline around selected overlays.
@@ -35,6 +36,10 @@ export const SelectionOutline: React.FC<{
 }) => {
   const scale = useCurrentScale();
   const scaledBorder = Math.ceil(1 / scale);
+  const { getAspectRatioDimensions } = useEditorContext();
+  
+  // Get the full canvas dimensions to match outline to canvas
+  const canvasDimensions = getAspectRatioDimensions();
 
   const [hovered, setHovered] = React.useState(false);
 
@@ -54,11 +59,21 @@ export const SelectionOutline: React.FC<{
     const selectionBoost = isSelected ? 10000 : 1000;
     const zIndex = baseZIndex + selectionBoost;
 
+    // If we're showing the outline, make it fill the entire canvas
+    // while preserving the original position and size of the overlay itself
+    const outlineWidth = isSelected ? canvasDimensions.width : overlay.width;
+    const outlineHeight = isSelected ? canvasDimensions.height : overlay.height;
+    
+    // When the outline is showing, position it at 0,0 to fill the canvas
+    // Otherwise, use the overlay's actual position
+    const outlineLeft = isSelected ? 0 : overlay.left;
+    const outlineTop = isSelected ? 0 : overlay.top;
+
     return {
-      width: overlay.width,
-      height: overlay.height,
-      left: overlay.left,
-      top: overlay.top,
+      width: outlineWidth,
+      height: outlineHeight,
+      left: outlineLeft,
+      top: outlineTop,
       position: "absolute",
       outline:
         (hovered && !isDragging) || isSelected
@@ -71,7 +86,7 @@ export const SelectionOutline: React.FC<{
       zIndex,
       pointerEvents: "all",
     };
-  }, [overlay, hovered, isDragging, isSelected, scaledBorder, overlay.row]);
+  }, [overlay, hovered, isDragging, isSelected, scaledBorder, overlay.row, canvasDimensions]);
 
   const startDragging = useCallback(
     (e: PointerEvent | React.MouseEvent) => {
@@ -81,11 +96,23 @@ export const SelectionOutline: React.FC<{
       const onPointerMove = (pointerMoveEvent: PointerEvent) => {
         const offsetX = (pointerMoveEvent.clientX - initialX) / scale;
         const offsetY = (pointerMoveEvent.clientY - initialY) / scale;
+        
+        // Calculate new position
+        const newLeft = Math.round(overlay.left + offsetX);
+        const newTop = Math.round(overlay.top + offsetY);
+        
+        // Constrain the overlay to remain within the canvas boundaries
+        const maxLeft = canvasDimensions.width - overlay.width;
+        const maxTop = canvasDimensions.height - overlay.height;
+        
+        const constrainedLeft = Math.max(0, Math.min(newLeft, maxLeft));
+        const constrainedTop = Math.max(0, Math.min(newTop, maxTop));
+        
         changeOverlay(overlay.id, (o) => {
           return {
             ...o,
-            left: Math.round(overlay.left + offsetX),
-            top: Math.round(overlay.top + offsetY),
+            left: constrainedLeft,
+            top: constrainedTop,
             isDragging: true,
           };
         });
@@ -107,7 +134,7 @@ export const SelectionOutline: React.FC<{
         once: true,
       });
     },
-    [overlay, scale, changeOverlay]
+    [overlay, scale, changeOverlay, canvasDimensions]
   );
 
   const onPointerDown = useCallback(
@@ -140,21 +167,25 @@ export const SelectionOutline: React.FC<{
             overlay={overlay}
             setOverlay={changeOverlay}
             type="top-left"
+            canvasDimensions={canvasDimensions}
           />
           <ResizeHandle
             overlay={overlay}
             setOverlay={changeOverlay}
             type="top-right"
+            canvasDimensions={canvasDimensions}
           />
           <ResizeHandle
             overlay={overlay}
             setOverlay={changeOverlay}
             type="bottom-left"
+            canvasDimensions={canvasDimensions}
           />
           <ResizeHandle
             overlay={overlay}
             setOverlay={changeOverlay}
             type="bottom-right"
+            canvasDimensions={canvasDimensions}
           />
           <RotateHandle
             overlay={overlay}

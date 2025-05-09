@@ -9,6 +9,11 @@ interface UseTimelineShortcutsProps {
   canRedo: boolean;
   zoomScale: number;
   setZoomScale: (scale: number) => void;
+  selectAll?: () => void;
+  deleteSelected?: () => void;
+  splitAtCurrentTime?: () => void;
+  copySelected?: () => void;
+  pasteItems?: () => void;
 }
 
 /**
@@ -21,6 +26,11 @@ interface UseTimelineShortcutsProps {
  * - Cmd/Ctrl + Shift + Z or Cmd/Ctrl + Y: Redo
  * - Alt + Plus/=: Zoom in
  * - Alt + Minus/-: Zoom out
+ * - Cmd/Ctrl + A: Select all items (handled by Timeline component)
+ * - Cmd/Ctrl + Backspace: Delete selected items (handled by Timeline component)
+ * - C: Split at current time
+ * - Cmd/Ctrl + C: Copy selected items
+ * - Cmd/Ctrl + V: Paste items
  *
  * @param {Object} props
  * @param {() => void} props.handlePlayPause - Function to toggle play/pause state
@@ -30,6 +40,11 @@ interface UseTimelineShortcutsProps {
  * @param {boolean} props.canRedo - Whether redo operation is available
  * @param {number} props.zoomScale - Current zoom level
  * @param {(scale: number) => void} props.setZoomScale - Function to update zoom level
+ * @param {() => void} props.selectAll - Function to select all items
+ * @param {() => void} props.deleteSelected - Function to delete all selected items
+ * @param {() => void} props.splitAtCurrentTime - Function to split at the current time
+ * @param {() => void} props.copySelected - Function to copy selected items
+ * @param {() => void} props.pasteItems - Function to paste copied items
  */
 export const useTimelineShortcuts = ({
   handlePlayPause,
@@ -39,6 +54,9 @@ export const useTimelineShortcuts = ({
   canRedo,
   zoomScale,
   setZoomScale,
+  splitAtCurrentTime,
+  copySelected,
+  pasteItems,
 }: UseTimelineShortcutsProps) => {
   // Space key for play/pause
   useHotkeys(
@@ -94,4 +112,57 @@ export const useTimelineShortcuts = ({
       preventDefault: true,
     }
   );
+
+  // Split at current time with 'c' key
+  useHotkeys("c", (e) => {
+    // Skip if typing in form elements
+    if (
+      e.target instanceof HTMLInputElement ||
+      e.target instanceof HTMLTextAreaElement ||
+      (e.target instanceof HTMLElement && e.target.isContentEditable)
+    ) {
+      return;
+    }
+    
+    e.preventDefault();
+    if (splitAtCurrentTime) {
+      splitAtCurrentTime();
+    }
+  });
+
+  // Copy selected items with Cmd+C
+  useHotkeys("meta+c, ctrl+c", (e) => {
+    // Allow default behavior in form elements
+    if (
+      e.target instanceof HTMLInputElement ||
+      e.target instanceof HTMLTextAreaElement ||
+      (e.target instanceof HTMLElement && e.target.isContentEditable)
+    ) {
+      return;
+    }
+    
+    e.preventDefault();
+    if (copySelected) {
+      copySelected();
+    }
+  });
+
+  // Paste items with Cmd+V
+  useHotkeys("meta+v, ctrl+v", (e) => {
+    // Allow default behavior in form elements
+    if (
+      e.target instanceof HTMLInputElement ||
+      e.target instanceof HTMLTextAreaElement ||
+      (e.target instanceof HTMLElement && e.target.isContentEditable)
+    ) {
+      return;
+    }
+    
+    e.preventDefault();
+    if (pasteItems) {
+      pasteItems();
+    }
+  });
+
+  // Note: Select all (Cmd+A) and Delete selected (Cmd+Backspace) are now handled directly in the Timeline component
 };

@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Play, Pause, Plus, Minus, Settings, Undo2, Redo2, ZoomIn, ZoomOut } from "lucide-react"
+import { Play, Pause, Plus, Minus, Settings, Undo2, Redo2, ZoomIn, ZoomOut, Trash2, Scissors, Copy, ClipboardPaste } from "lucide-react"
 import { useEditorContext } from "../../contexts/editor-context"
 import { useTimeline } from "../../contexts/timeline-context"
 import { MAX_ROWS, INITIAL_ROWS, ZOOM_CONSTRAINTS } from "../../constants"
@@ -35,6 +35,16 @@ interface TimelineControlsProps {
   totalDuration: number
   /** Function to format frame numbers into a time string */
   formatTime: (frames: number) => string
+  /** Function to select all timeline items */
+  selectAll?: () => void
+  /** Function to delete all selected timeline items */
+  deleteSelected?: () => void
+  /** Function to split timeline item at current time */
+  splitAtCurrentTime?: () => void
+  /** Function to copy selected timeline items */
+  copySelected?: () => void
+  /** Function to paste copied items */
+  pasteItems?: () => void
 }
 
 /**
@@ -65,6 +75,11 @@ export const TimelineControls: React.FC<TimelineControlsProps> = ({
   currentFrame,
   totalDuration,
   formatTime,
+  selectAll,
+  deleteSelected,
+  splitAtCurrentTime,
+  copySelected,
+  pasteItems,
 }) => {
   // Context
   const { aspectRatio, setAspectRatio, deleteOverlaysByRow, undo, redo, canUndo, canRedo, resetOverlays } =
@@ -83,6 +98,11 @@ export const TimelineControls: React.FC<TimelineControlsProps> = ({
     canRedo,
     zoomScale,
     setZoomScale,
+    selectAll,
+    deleteSelected,
+    splitAtCurrentTime,
+    copySelected,
+    pasteItems,
   })
 
   // Keep track of previous frame to detect resets
@@ -227,7 +247,7 @@ export const TimelineControls: React.FC<TimelineControlsProps> = ({
 
   return (
     <div className="flex justify-between items-center border-b border-gray-200 dark:border-gray-800 bg-white/95 dark:bg-black/95 px-3 py-2.5 backdrop-blur-sm">
-      {/* Left section: Undo/Redo */}
+      {/* Left section: Undo/Redo, Delete, Split, Copy, Paste */}
       <div className="flex items-center gap-1">
         <TooltipProvider delayDuration={50}>
           <Tooltip>
@@ -279,6 +299,114 @@ export const TimelineControls: React.FC<TimelineControlsProps> = ({
                 <span className="text-black dark:text-white">Redo</span>
                 <kbd className="px-1 py-0.5 text-[10px] font-mono bg-black dark:bg-black text-white rounded-md border border-gray-800">
                   ⌘Y
+                </kbd>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+          
+          {/* Delete button */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={() => deleteSelected && deleteSelected()}
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 hover:bg-gray-100/80 dark:hover:bg-gray-800/80"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent
+              side="top"
+              sideOffset={5}
+              className="bg-white dark:bg-black text-xs px-2 py-1 rounded-md z-[9999] border border-gray-200 dark:border-gray-800"
+              align="start"
+            >
+              <div className="flex items-center gap-1">
+                <span className="text-black dark:text-white">Delete Selected</span>
+                <kbd className="px-1 py-0.5 text-[10px] font-mono bg-black dark:bg-black text-white rounded-md border border-gray-800">
+                  ⌘⌫
+                </kbd>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+
+          {/* Split button */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={() => splitAtCurrentTime && splitAtCurrentTime()}
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-gray-100/80 dark:hover:bg-gray-800/80"
+              >
+                <Scissors className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent
+              side="top"
+              sideOffset={5}
+              className="bg-white dark:bg-black text-xs px-2 py-1 rounded-md z-[9999] border border-gray-200 dark:border-gray-800"
+              align="start"
+            >
+              <div className="flex items-center gap-1">
+                <span className="text-black dark:text-white">Split at Current Time</span>
+                <kbd className="px-1 py-0.5 text-[10px] font-mono bg-black dark:bg-black text-white rounded-md border border-gray-800">
+                  C
+                </kbd>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+
+          {/* Copy button */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={() => copySelected && copySelected()}
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 text-green-500 hover:text-green-600 dark:text-green-400 dark:hover:text-green-300 hover:bg-gray-100/80 dark:hover:bg-gray-800/80"
+              >
+                <Copy className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent
+              side="top"
+              sideOffset={5}
+              className="bg-white dark:bg-black text-xs px-2 py-1 rounded-md z-[9999] border border-gray-200 dark:border-gray-800"
+              align="start"
+            >
+              <div className="flex items-center gap-1">
+                <span className="text-black dark:text-white">Copy Selected</span>
+                <kbd className="px-1 py-0.5 text-[10px] font-mono bg-black dark:bg-black text-white rounded-md border border-gray-800">
+                  ⌘C
+                </kbd>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+
+          {/* Paste button */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={() => pasteItems && pasteItems()}
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7 text-purple-500 hover:text-purple-600 dark:text-purple-400 dark:hover:text-purple-300 hover:bg-gray-100/80 dark:hover:bg-gray-800/80"
+              >
+                <ClipboardPaste className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent
+              side="top"
+              sideOffset={5}
+              className="bg-white dark:bg-black text-xs px-2 py-1 rounded-md z-[9999] border border-gray-200 dark:border-gray-800"
+              align="start"
+            >
+              <div className="flex items-center gap-1">
+                <span className="text-black dark:text-white">Paste Items</span>
+                <kbd className="px-1 py-0.5 text-[10px] font-mono bg-black dark:bg-black text-white rounded-md border border-gray-800">
+                  ⌘V
                 </kbd>
               </div>
             </TooltipContent>

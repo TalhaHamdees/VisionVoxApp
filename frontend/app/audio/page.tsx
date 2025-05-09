@@ -23,6 +23,7 @@ import { DropdownMenu, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparato
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { cn } from "@/lib/utils";
 import { Progress } from '@/components/ui/progress';
+import { storeAudioFile } from '@/lib/indexed-db';
 
 // Custom SelectItem without the default indicator
 const CustomSelectItem = React.forwardRef<
@@ -1098,6 +1099,9 @@ export default function AudioPage() {
     };
   }, []);
 
+  // Add state for script title
+  const [scriptTitle, setScriptTitle] = useState('');
+
   // Function to move audio to video editor
   const moveToVideoEditor = async () => {
     if (!audioRefs['generated']?.src) {
@@ -1116,31 +1120,67 @@ export default function AudioPage() {
       const response = await fetch(audioRefs['generated'].src);
       const blob = await response.blob();
       
-      // Create a File object from the blob
-      const filename = `visionvox_voiceover_${Date.now()}.mp3`;
-      const file = new File([blob], filename, { type: 'audio/mpeg' });
+      // Use script title for naming if available, otherwise fall back to first line
+      let fileName = '';
       
-      // Store the file in localStorage for the video editor to access
-      // We'll store the URL and metadata
-      const audioFileUrl = URL.createObjectURL(file);
+      if (scriptTitle && scriptTitle.trim() !== '') {
+        // Use script title if available
+        fileName = scriptTitle.substring(0, 50).replace(/[\\/:*?"<>|]/g, '_');
+      } else {
+        // Fallback to first line logic
+        const firstLine = text.split('\n')[0].trim();
+        
+        if (firstLine && firstLine.length > 0) {
+          // Limit to 30 characters and remove any invalid filename characters
+          fileName = firstLine.substring(0, 30).replace(/[\\/:*?"<>|]/g, '_');
+        } else {
+          // Fallback if there's no text or first line is empty
+          fileName = `visionvox_voiceover_${Date.now()}`;
+        }
+      }
+      
+      // Ensure the filename ends with .mp3
+      fileName = `${fileName}.mp3`;
+      
+      // Create a File object from the blob
+      const file = new File([blob], fileName, { type: 'audio/mpeg' });
+      
+      // Create a unique ID for the audio file
+      const audioId = Date.now().toString();
+      
+      // Store the audio file in IndexedDB for persistence
+      await storeAudioFile({
+        id: audioId,
+        name: fileName,
+        blob: blob,
+        duration: audioRefs['generated'].duration || 0,
+        createdAt: new Date().toISOString()
+      });
+      
+      // Create a temporary URL for immediate use
+      const audioFileUrl = URL.createObjectURL(blob);
       
       // Create audio folder in localStorage if it doesn't exist
       const audioFolder = localStorage.getItem('visionvox_audio_folder');
       const audioFiles = audioFolder ? JSON.parse(audioFolder) : [];
       
-      // Add the new audio file
+      // Add the new audio file with a reference to IndexedDB
       audioFiles.push({
-        id: Date.now().toString(),
-        name: filename,
-        url: audioFileUrl,
+        id: audioId,
+        name: fileName,
+        url: audioFileUrl, // Temporary URL for current session
         type: 'audio/mpeg',
         size: blob.size,
         duration: audioRefs['generated'].duration || 0,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        persistent: true // Flag to indicate this is stored in IndexedDB
       });
       
       // Save back to localStorage
       localStorage.setItem('visionvox_audio_folder', JSON.stringify(audioFiles));
+      
+      // Set flag to add this audio to timeline when editor loads
+      localStorage.setItem('visionvox_add_to_timeline', audioId);
       
       // Dispatch a storage event to notify the editor
       window.dispatchEvent(new StorageEvent('storage', {
@@ -1172,11 +1212,21 @@ export default function AudioPage() {
       const scriptFromStorage = window.localStorage.getItem('script_for_audio');
       if (scriptFromStorage && scriptFromStorage.trim() !== '') {
         setText(scriptFromStorage);
+        
+        // Get the script title if available
+        const scriptTitleFromStorage = window.localStorage.getItem('script_title_for_audio');
+        if (scriptTitleFromStorage) {
+          setScriptTitle(scriptTitleFromStorage);
+          // Clear the localStorage after using it
+          window.localStorage.removeItem('script_title_for_audio');
+        }
+        
         // Clear the localStorage after using it
         window.localStorage.removeItem('script_for_audio');
         
         if (DEBUG) {
           console.log('Script loaded from localStorage:', scriptFromStorage);
+          console.log('Script title loaded from localStorage:', scriptTitleFromStorage);
         }
         
         // Ensure voices are loaded when navigating from scriptwriting page

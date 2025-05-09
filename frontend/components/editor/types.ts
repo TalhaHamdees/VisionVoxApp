@@ -6,6 +6,7 @@ export enum OverlayType {
   VIDEO = "clip",
   SOUND = "sound",
   CAPTION = "caption",
+  MEDIA = "media",
 }
 // Base overlay properties
 type BaseOverlay = {
@@ -243,6 +244,9 @@ export type TimelineItemUnion = Video | Sound | LayerItem;
 
 // Type for the selected item in the editor
 export type SelectedItem = TimelineItemUnion | null;
+
+// Type for the selected items in the editor (for multi-selection)
+export type SelectedItems = Set<number>;
 
 // Zod schema for composition props
 

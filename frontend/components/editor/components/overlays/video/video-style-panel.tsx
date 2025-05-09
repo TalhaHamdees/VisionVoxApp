@@ -44,16 +44,19 @@ export const VideoStylePanel: React.FC<VideoStylePanelProps> = ({
             Fit
           </label>
           <select
-            value={localOverlay?.styles?.objectFit ?? "cover"}
+            value={localOverlay?.styles?.objectFit ?? "contain"}
             onChange={(e) =>
               handleStyleChange({ objectFit: e.target.value as any })
             }
             className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-md text-xs p-2 hover:border-gray-300 dark:hover:border-gray-600 transition-colors text-gray-900 dark:text-gray-100"
           >
-            <option value="cover">Cover</option>
-            <option value="contain">Contain</option>
-            <option value="fill">Fill</option>
+            <option value="contain">Contain (Fit entire video)</option>
+            <option value="cover">Cover (Fill frame)</option>
+            <option value="fill">Fill (Stretch to frame)</option>
           </select>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            "Contain" preserves aspect ratio and shows the entire video
+          </p>
         </div>
 
         {/* Border Radius */}

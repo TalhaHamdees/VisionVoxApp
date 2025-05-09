@@ -76,6 +76,25 @@ export const useFileUpload = () => {
   };
 
   /**
+   * Generate a unique ID for a file based on name, size and timestamp
+   */
+  const generateUniqueFileId = (file: File, index: number): string => {
+    // Create a base string using file properties that should be unique in combination
+    const baseStr = `${file.name}-${file.size}-${file.lastModified}-${Date.now()}-${index}`;
+    
+    // Create a simple hash function
+    let hash = 0;
+    for (let i = 0; i < baseStr.length; i++) {
+      const char = baseStr.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    
+    // Return a consistent ID format
+    return `file-${Math.abs(hash).toString(16)}-${Date.now()}`;
+  };
+
+  /**
    * Process uploaded files
    */
   const handleFileUpload = async (files: FileList | null) => {
@@ -111,7 +130,7 @@ export const useFileUpload = () => {
         }
         
         newFiles.push({
-          id: `upload-${Date.now()}-${i}`,
+          id: generateUniqueFileId(file, i),
           name: file.name,
           type: fileType,
           size: file.size,

@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Overlay, OverlayType, CaptionStyles, CaptionOverlay } from "../types";
+import { Overlay, OverlayType, CaptionStyles, CaptionOverlay, SelectedItems } from "../types";
 import { defaultCaptionStyles } from "../components/overlays/captions/caption-settings";
 
 /**
@@ -15,6 +15,74 @@ export const useOverlays = () => {
   const [selectedOverlayId, setSelectedOverlayId] = useState<number | null>(
     null
   );
+  
+  // Multiple selection support
+  const [selectedOverlayIds, setSelectedOverlayIds] = useState<SelectedItems>(new Set());
+  
+  // Add an overlay to the selection
+  const addToSelection = useCallback((id: number) => {
+    setSelectedOverlayIds((prev) => {
+      const newSelection = new Set(prev);
+      newSelection.add(id);
+      return newSelection;
+    });
+  }, []);
+  
+  // Remove an overlay from the selection
+  const removeFromSelection = useCallback((id: number) => {
+    setSelectedOverlayIds((prev) => {
+      const newSelection = new Set(prev);
+      newSelection.delete(id);
+      return newSelection;
+    });
+  }, []);
+  
+  // Clear all selections
+  const clearSelection = useCallback(() => {
+    setSelectedOverlayIds(new Set());
+    setSelectedOverlayId(null);
+  }, []);
+  
+  // Check if an overlay is selected
+  const isSelected = useCallback((id: number) => {
+    return selectedOverlayIds.has(id);
+  }, [selectedOverlayIds]);
+  
+  // Toggle selection state of an overlay
+  const toggleSelection = useCallback((id: number) => {
+    setSelectedOverlayIds((prev) => {
+      const newSelection = new Set(prev);
+      if (newSelection.has(id)) {
+        newSelection.delete(id);
+      } else {
+        newSelection.add(id);
+      }
+      return newSelection;
+    });
+  }, []);
+  
+  // Select all overlays
+  const selectAll = useCallback(() => {
+    const allIds = new Set(overlays.map(overlay => overlay.id));
+    setSelectedOverlayIds(allIds);
+  }, [overlays]);
+  
+  // Delete all selected overlays
+  const deleteSelected = useCallback(() => {
+    if (selectedOverlayIds.size === 0) return;
+    
+    setOverlays((prevOverlays) => 
+      prevOverlays.filter(overlay => !selectedOverlayIds.has(overlay.id))
+    );
+    
+    clearSelection();
+  }, [selectedOverlayIds, clearSelection]);
+  
+  // Handle legacy single selection to keep backward compatibility
+  const handleSingleSelection = useCallback((id: number | null) => {
+    setSelectedOverlayId(id);
+    setSelectedOverlayIds(id === null ? new Set() : new Set([id]));
+  }, []);
 
   /**
    * Updates properties of a specific overlay
@@ -186,7 +254,16 @@ export const useOverlays = () => {
   return {
     overlays,
     selectedOverlayId,
-    setSelectedOverlayId,
+    setSelectedOverlayId: handleSingleSelection,
+    selectedOverlayIds,
+    setSelectedOverlayIds,
+    addToSelection,
+    removeFromSelection,
+    clearSelection,
+    isSelected,
+    toggleSelection,
+    selectAll,
+    deleteSelected,
     setOverlays,
     changeOverlay,
     addOverlay,

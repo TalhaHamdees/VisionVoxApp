@@ -19,6 +19,7 @@ interface ImageStylePanelProps {
  *
  * Features:
  * - Brightness adjustment (0-200%)
+ * - Object fit settings (contain, cover, fill)
  * - Maintains existing filters while updating individual properties
  * - Real-time preview of adjustments
  *
@@ -35,7 +36,28 @@ export const ImageStylePanel: React.FC<ImageStylePanelProps> = ({
       <div className="space-y-4 rounded-md bg-muted/50 p-4 border border-border">
         <h3 className="text-sm font-medium text-foreground">Appearance</h3>
 
-        {/* Appearance Settings */}
+        {/* Object Fit Options */}
+        <div className="space-y-2">
+          <label className="text-xs text-muted-foreground">
+            Fit
+          </label>
+          <select
+            value={localOverlay?.styles?.objectFit ?? "contain"}
+            onChange={(e) =>
+              handleStyleChange({ objectFit: e.target.value as any })
+            }
+            className="w-full bg-background border border-border rounded-md text-xs p-2 hover:border-muted-foreground transition-colors text-foreground"
+          >
+            <option value="contain">Contain (Fit entire image)</option>
+            <option value="cover">Cover (Fill frame)</option>
+            <option value="fill">Fill (Stretch to frame)</option>
+          </select>
+          <p className="text-xs text-muted-foreground">
+            "Contain" preserves aspect ratio and shows the entire image
+          </p>
+        </div>
+
+        {/* Brightness */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="text-xs text-muted-foreground">Brightness</label>

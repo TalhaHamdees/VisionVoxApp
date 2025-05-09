@@ -51,25 +51,42 @@ export const VideoLayerContent: React.FC<VideoLayerContentProps> = ({
         )
       : {};
 
-  const videoStyle: React.CSSProperties = {
+  /**
+   * Container style for proper centering of the video
+   */
+  const containerStyle: React.CSSProperties = {
     width: "100%",
     height: "100%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+    ...(isExitPhase ? exitAnimation : enterAnimation),
+  };
+
+  /**
+   * Video-specific styling with animation phase
+   */
+  const videoStyle: React.CSSProperties = {
+    maxWidth: "100%",
+    maxHeight: "100%",
     objectFit: overlay.styles.objectFit || "cover",
-    opacity: overlay.styles.opacity,
-    transform: overlay.styles.transform || "none",
+    objectPosition: overlay.styles.objectPosition || "center",
+    opacity: overlay.styles.opacity !== undefined ? overlay.styles.opacity : 1,
     borderRadius: overlay.styles.borderRadius || "0px",
     filter: overlay.styles.filter || "none",
     boxShadow: overlay.styles.boxShadow || "none",
     border: overlay.styles.border || "none",
-    ...(isExitPhase ? exitAnimation : enterAnimation),
   };
 
   return (
-    <OffthreadVideo
-      src={overlay.src}
-      startFrom={overlay.videoStartTime || 0}
-      style={videoStyle}
-      volume={overlay.styles.volume ?? 1}
-    />
+    <div style={containerStyle}>
+      <OffthreadVideo
+        src={overlay.src}
+        startFrom={overlay.videoStartTime || 0}
+        style={videoStyle}
+        volume={overlay.styles.volume ?? 1}
+      />
+    </div>
   );
 };

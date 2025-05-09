@@ -40,6 +40,7 @@ export const TextOverlaysPanel: React.FC = () => {
         <TextDetails
           localOverlay={localOverlay}
           setLocalOverlay={handleSetLocalOverlay}
+          onBack={() => setLocalOverlay(null)}
         />
       )}
     </div>

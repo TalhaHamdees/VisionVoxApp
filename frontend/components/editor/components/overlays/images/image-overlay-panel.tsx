@@ -116,7 +116,8 @@ export const ImageOverlayPanel: React.FC = () => {
       type: OverlayType.IMAGE,
       src: image.src.original,
       styles: {
-        objectFit: "cover",
+        objectFit: "contain",
+        objectPosition: "center",
         animation: {
           enter: "fadeIn",
           exit: "fadeOut",
@@ -155,7 +156,8 @@ export const ImageOverlayPanel: React.FC = () => {
       type: OverlayType.IMAGE,
       src: file.url,
       styles: {
-        objectFit: "cover",
+        objectFit: "contain",
+        objectPosition: "center",
         animation: {
           enter: "fadeIn",
           exit: "fadeOut",
@@ -255,6 +257,7 @@ export const ImageOverlayPanel: React.FC = () => {
         <ImageDetails
           localOverlay={localOverlay as ImageOverlay}
           setLocalOverlay={handleUpdateOverlay}
+          onBack={() => setLocalOverlay(null)}
         />
       )}
     </div>

@@ -208,7 +208,8 @@ export default function ScriptwritingPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          user_query: `Write a script about ${scriptTitle} focusing on these keywords: ${prompt}`,
+          user_query: `Write a script about ${scriptTitle} with this outline: ${prompt}`,
+          model: "ft:gpt-4.1-2025-04-14:personal:vvscripts:BRGxY5I9"
         }),
       });
       
@@ -253,6 +254,7 @@ export default function ScriptwritingPage() {
         body: JSON.stringify({
           user_refinement: refinementPrompt,
           session_id: sessionId,
+          model: "ft:gpt-4.1-2025-04-14:personal:vvscripts:BRGxY5I9"
         }),
       });
       
@@ -566,7 +568,7 @@ export default function ScriptwritingPage() {
                 Generate Script
               </CardTitle>
               <CardDescription>
-                Enter a title and keywords to generate a script
+                Enter a title and outline to generate a script
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -582,15 +584,19 @@ export default function ScriptwritingPage() {
                 />
               </div>
               <div>
-                <label htmlFor="keywords" className="block text-sm font-medium text-foreground mb-1">
-                  Keywords (comma separated)
+                <label htmlFor="outline" className="block text-sm font-medium text-foreground mb-1">
+                  Outline
                 </label>
-                <Input
-                  id="keywords"
-                  placeholder="e.g. AI, video editing, content creation"
+                <Textarea
+                  id="outline"
+                  placeholder="Brief description of what the script should cover"
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
+                  className="h-24"
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Provide a short outline of the main points you want covered in the script
+                </p>
               </div>
               <div className="pt-2">
                 <Button 
@@ -718,6 +724,8 @@ export default function ScriptwritingPage() {
                     // Save script to localStorage for audio page
                     if (typeof window !== 'undefined') {
                       window.localStorage.setItem('script_for_audio', scriptContent);
+                      // Also save the script title
+                      window.localStorage.setItem('script_title_for_audio', scriptTitle || 'Untitled Script');
                       toast({
                         title: "Script ready for audio generation",
                         description: "Your script has been transferred to the audio generator.",

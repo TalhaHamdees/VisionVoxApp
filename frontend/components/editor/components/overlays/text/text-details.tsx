@@ -1,21 +1,24 @@
 import React, { useCallback } from "react";
 import { useEditorContext } from "../../../contexts/editor-context";
 import { TextOverlay } from "../../../types";
-import { PaintBucket, Settings } from "lucide-react";
+import { PaintBucket, Settings, ArrowLeft } from "lucide-react";
 import debounce from "lodash/debounce";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TextSettingsPanel } from "./text-settings-panel";
 import { TextStylePanel } from "./text-style-panel";
+import { Button } from "@/components/ui/button";
 
 /**
  * Props for the TextDetails component
  * @interface TextDetailsProps
  * @property {TextOverlay} localOverlay - The local state of the text overlay being edited
  * @property {function} setLocalOverlay - Function to update the local overlay state
+ * @property {function} onBack - Optional callback to go back to text selection view
  */
 interface TextDetailsProps {
   localOverlay: TextOverlay;
   setLocalOverlay: (overlay: TextOverlay) => void;
+  onBack?: () => void;
 }
 
 /**
@@ -30,6 +33,7 @@ interface TextDetailsProps {
 export const TextDetails: React.FC<TextDetailsProps> = ({
   localOverlay,
   setLocalOverlay,
+  onBack
 }) => {
   const { changeOverlay, selectedOverlayId, overlays } = useEditorContext();
 
@@ -94,6 +98,19 @@ export const TextDetails: React.FC<TextDetailsProps> = ({
 
   return (
     <div className="space-y-4">
+      {/* Back button */}
+      {onBack && (
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={onBack}
+          className="mb-2 hover:bg-accent"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to text selection
+        </Button>
+      )}
+
       {/* Preview and Edit Section */}
       <div className="flex flex-col gap-2 ">
         {/* Preview */}

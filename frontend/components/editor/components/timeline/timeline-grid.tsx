@@ -4,10 +4,10 @@
  * Supports drag and drop, resizing, and various item management operations.
  */
 
-import React, { useMemo } from "react";
+import React, { useMemo, useCallback } from "react";
 import { ROW_HEIGHT } from "../../constants";
 import { useTimeline } from "../../contexts/timeline-context";
-import { Overlay } from "../../types";
+import { Overlay, SelectedItems } from "../../types";
 import GapIndicator from "./timeline-gap-indicator";
 import TimelineItem from "./timeline-item";
 
@@ -26,6 +26,12 @@ interface TimelineGridProps {
   selectedOverlayId: number | null;
   /** Callback to update the selected overlay ID */
   setSelectedOverlayId: (id: number | null) => void;
+  /** Set of IDs for selected overlays */
+  selectedOverlayIds?: SelectedItems;
+  /** Check if an overlay is selected */
+  isSelected?: (id: number) => boolean;
+  /** Toggle selection state of an overlay */
+  toggleSelection?: (id: number) => void;
   /** Callback triggered when dragging starts */
   handleDragStart: (
     overlay: Overlay,
@@ -68,6 +74,9 @@ const TimelineGrid: React.FC<TimelineGridProps> = ({
   draggedItem,
   selectedOverlayId,
   setSelectedOverlayId,
+  selectedOverlayIds = new Set(),
+  isSelected = () => false,
+  toggleSelection = () => {},
   handleDragStart,
   totalDuration,
   ghostElement,
@@ -82,11 +91,31 @@ const TimelineGrid: React.FC<TimelineGridProps> = ({
 }) => {
   const { visibleRows } = useTimeline();
 
-  // Create a memoized selectedItem object
+  // Create a memoized selectedItem object for backward compatibility
   const selectedItem = useMemo(
     () => (selectedOverlayId !== null ? { id: selectedOverlayId } : null),
     [selectedOverlayId]
   );
+
+  /**
+   * Handle item selection with multi-select support
+   * @param id - The ID of the item to select
+   * @param event - Optional mouse event containing key modifiers
+   */
+  const handleItemSelection = useCallback((id: number) => {
+    const e = window.event as MouseEvent | undefined;
+    const hasModifier = e && (e.shiftKey || e.metaKey || e.ctrlKey);
+    
+    if (hasModifier) {
+      // When modifier key is pressed, toggle selection
+      if (typeof toggleSelection === 'function') {
+        toggleSelection(id);
+      }
+    } else {
+      // When no modifier key is pressed, single selection
+      setSelectedOverlayId(id);
+    }
+  }, [toggleSelection, setSelectedOverlayId]);
 
   /**
    * Finds gaps between overlay items in a single timeline row
@@ -160,7 +189,8 @@ const TimelineGrid: React.FC<TimelineGridProps> = ({
                   isDragging={isDragging}
                   draggedItem={draggedItem}
                   selectedItem={selectedItem}
-                  setSelectedItem={(item) => setSelectedOverlayId(item.id)}
+                  setSelectedItem={(item) => handleItemSelection(item.id)}
+                  isMultiSelected={isSelected(overlay.id)}
                   handleMouseDown={(action, e) =>
                     handleDragStart(overlay, e.clientX, e.clientY, action)
                   }
@@ -181,6 +211,7 @@ const TimelineGrid: React.FC<TimelineGridProps> = ({
                   onContextMenuChange={onContextMenuChange}
                   currentFrame={currentFrame}
                   zoomScale={zoomScale}
+                  data-overlay-id={overlay.id}
                 />
               ))}
 

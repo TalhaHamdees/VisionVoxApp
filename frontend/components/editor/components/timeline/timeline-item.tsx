@@ -46,6 +46,8 @@ interface TimelineItemProps {
   selectedItem: { id: number } | null
   /** Callback to update the selected item */
   setSelectedItem: (item: { id: number }) => void
+  /** Whether this item is selected in multi-selection mode */
+  isMultiSelected?: boolean
   /** Handler for mouse-based drag and resize operations */
   handleMouseDown: (action: "move" | "resize-start" | "resize-end", e: React.MouseEvent<HTMLDivElement>) => void
   /** Handler for touch-based drag and resize operations */
@@ -79,6 +81,7 @@ const TimelineItem: React.FC<TimelineItemProps> = ({
   draggedItem,
   selectedItem,
   setSelectedItem,
+  isMultiSelected = false,
   handleMouseDown,
   handleTouchStart,
   totalDuration,
@@ -96,7 +99,7 @@ const TimelineItem: React.FC<TimelineItemProps> = ({
     item.durationInFrames,
   )
 
-  const isSelected = selectedItem?.id === item.id
+  const isSelected = selectedItem?.id === item.id || isMultiSelected
   const itemRef = useRef<HTMLDivElement>(null)
   const { setActivePanel, setIsOpen } = useSidebar()
 
@@ -110,7 +113,7 @@ const TimelineItem: React.FC<TimelineItemProps> = ({
   ) => {
     e.stopPropagation()
     if (action === "click") {
-      setSelectedItem({ id: item.id })
+      // We don't trigger click separately as it's handled by onClick={handleSelect}
     } else if (action === "mousedown") {
       handleMouseDown("move", e as React.MouseEvent<HTMLDivElement>)
     } else if (action === "touchstart") {
@@ -175,10 +178,23 @@ const TimelineItem: React.FC<TimelineItemProps> = ({
 
   const itemClasses = useMemo(() => getItemClasses(item.type), [item.type])
 
+  /**
+   * Handle click on the item
+   * Supports modifier keys for multi-selection
+   */
   const handleSelect = (e: React.MouseEvent) => {
     e.stopPropagation()
+    
+    // Check for modifier keys for multi-selection
+    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+      // Let timeline grid handle the selection with modifiers
+      setSelectedItem({ id: item.id })
+    } else {
+      // Single selection
     setSelectedItem({ id: item.id })
+    }
 
+    // Open sidebar panel with appropriate settings
     if (
       item.type === OverlayType.VIDEO ||
       item.type === OverlayType.TEXT ||
@@ -260,6 +276,7 @@ const TimelineItem: React.FC<TimelineItemProps> = ({
         onTouchStart={(e) => handleItemInteraction(e, "touchstart")}
         onClick={handleSelect}
         onMouseMove={handleMouseMove}
+        data-overlay-id={item.id}
       >
         {renderContent()}
         <TimelineItemHandle

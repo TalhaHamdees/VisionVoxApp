@@ -1,7 +1,7 @@
 "use client"
 
 import type * as React from "react"
-import { Film, Music, Type, Subtitles, ImageIcon } from "lucide-react"
+import { Film, Music, Type, Subtitles, ImageIcon, Library } from "lucide-react"
 import Image from "next/image"
 import {
   Sidebar,
@@ -22,6 +22,7 @@ import { OverlayType } from "../../types"
 import { CaptionsPanel } from "../overlays/captions/captions-panel"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { ImageOverlayPanel } from "../overlays/images/image-overlay-panel"
+import MediaPanel from "../overlays/media/media-panel"
 
 /**
  * AppSidebar Component
@@ -49,6 +50,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         return "Caption"
       case OverlayType.IMAGE:
         return "Image"
+      case OverlayType.MEDIA:
+        return "Media"
       default:
         return "Unknown"
     }
@@ -90,6 +93,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       panel: OverlayType.IMAGE,
       type: OverlayType.IMAGE,
     },
+    {
+      title: getPanelTitle(OverlayType.MEDIA),
+      url: "#",
+      icon: Library,
+      panel: OverlayType.MEDIA,
+      type: OverlayType.MEDIA,
+    },
   ]
 
   /**
@@ -108,6 +118,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         return <CaptionsPanel />
       case OverlayType.IMAGE:
         return <ImageOverlayPanel />
+      case OverlayType.MEDIA:
+        return <MediaPanel />
       default:
         return null
     }

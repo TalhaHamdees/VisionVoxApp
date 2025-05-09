@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from "react";
 import { SoundOverlay } from "../../../types";
-import { Play, Pause } from "lucide-react";
+import { Play, Pause, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 interface SoundDetailsProps {
   localOverlay: SoundOverlay;
   setLocalOverlay: (overlay: SoundOverlay) => void;
+  onBack?: () => void; // Optional callback to go back to the sound selection view
 }
 
 /**
@@ -30,6 +31,7 @@ interface SoundDetailsProps {
 export const SoundDetails: React.FC<SoundDetailsProps> = ({
   localOverlay,
   setLocalOverlay,
+  onBack
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -78,6 +80,19 @@ export const SoundDetails: React.FC<SoundDetailsProps> = ({
 
   return (
     <div className="space-y-4">
+      {/* Back button */}
+      {onBack && (
+        <Button 
+          variant="ghost" 
+          size="sm" 
+          onClick={onBack}
+          className="mb-2 hover:bg-accent"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back to audio selection
+        </Button>
+      )}
+
       {/* Sound Info with Play Button */}
       <div className="flex items-center gap-3 p-4 bg-background/50 rounded-md border">
         <Button

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, ReactNode } from "react";
-import { Overlay, AspectRatio, CaptionStyles } from "../types";
+import { Overlay, AspectRatio, CaptionStyles, SelectedItems } from "../types";
 import { ProjectState } from "../hooks/use-project-persistence";
 
 // Define the shape of the context
@@ -8,6 +8,18 @@ interface EditorContextProps {
   overlays: Overlay[]; // Array of all overlays in the editor
   selectedOverlayId: number | null; // Currently selected overlay's ID
   setSelectedOverlayId: any; // Function to select an overlay
+  
+  // Multi-selection support
+  selectedOverlayIds: SelectedItems; // Set of IDs for selected overlays
+  setSelectedOverlayIds: (ids: SelectedItems) => void; // Function to set selected overlays
+  addToSelection: (id: number) => void; // Add an overlay to the selection
+  removeFromSelection: (id: number) => void; // Remove an overlay from selection
+  clearSelection: () => void; // Clear all selections
+  isSelected: (id: number) => boolean; // Check if an overlay is selected
+  toggleSelection: (id: number) => void; // Toggle selection state of an overlay
+  selectAll: () => void; // Select all overlays
+  deleteSelected: () => void; // Delete all selected overlays
+  
   changeOverlay: (
     // Function to update overlay properties
     id: number,

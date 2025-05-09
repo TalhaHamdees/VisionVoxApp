@@ -1,6 +1,6 @@
 "use client"
 
-import React from "react"
+import React, { useState } from "react"
 import { EditorHeader } from "./editor-header"
 
 import { useEditorContext } from "../../contexts/editor-context"
@@ -8,6 +8,7 @@ import { TimelineControls } from "../timeline/timeline-controls"
 import { FPS } from "../../constants"
 import Timeline from "../timeline/timeline"
 import { VideoPlayer } from "./video-player"
+import { Overlay } from "../../types"
 
 /**
  * Main Editor Component
@@ -40,6 +41,9 @@ import { VideoPlayer } from "./video-player"
 export const Editor: React.FC = () => {
   /** State to track if the current viewport is mobile-sized */
   const [isMobile, setIsMobile] = React.useState(false)
+  
+  /** State to store copied items */
+  const [copiedItems, setCopiedItems] = useState<Overlay[]>([])
 
   /**
    * Effect to handle mobile detection and window resize events
@@ -63,6 +67,15 @@ export const Editor: React.FC = () => {
     overlays, // Array of current overlay objects
     selectedOverlayId, // ID of the currently selected overlay
     setSelectedOverlayId, // Function to update selected overlay
+    selectedOverlayIds, // Set of IDs for selected overlays
+    setSelectedOverlayIds, // Function to set selected overlays
+    addToSelection, // Add an overlay to the selection
+    removeFromSelection, // Remove an overlay from selection
+    clearSelection, // Clear all selections
+    isSelected, // Check if an overlay is selected
+    toggleSelection, // Toggle selection state of an overlay
+    selectAll, // Select all overlays
+    deleteSelected, // Delete all selected overlays
     isPlaying, // Current playback state
     currentFrame, // Current frame position
     playerRef, // Reference to video player
@@ -74,7 +87,104 @@ export const Editor: React.FC = () => {
     duplicateOverlay, // Function to clone an overlay
     splitOverlay, // Function to split an overlay at current position
     durationInFrames, // Total duration in frames
+    addOverlay, // Function to add a new overlay
   } = useEditorContext()
+
+  /**
+   * Handle splitting the selected item at the current time position
+   */
+  const handleSplitAtCurrentTime = () => {
+    // Only proceed if an item is selected
+    if (selectedOverlayId !== null) {
+      // Find the selected overlay
+      const overlay = overlays.find(o => o.id === selectedOverlayId)
+      if (overlay) {
+        // Check if current frame is within the overlay duration
+        if (currentFrame > overlay.from && currentFrame < overlay.from + overlay.durationInFrames) {
+          splitOverlay(selectedOverlayId, currentFrame)
+        }
+      }
+    }
+  }
+
+  /**
+   * Handle copying selected items
+   */
+  const handleCopySelected = () => {
+    // Only copy the single selected item, not multiple selections
+    if (selectedOverlayId !== null) {
+      const selectedOverlay = overlays.find(o => o.id === selectedOverlayId);
+      if (selectedOverlay) {
+        setCopiedItems([selectedOverlay]);
+        console.log(`Copied item: ${selectedOverlay.id}`);
+      }
+    }
+  }
+
+  /**
+   * Handle pasting copied items
+   */
+  const handlePasteItems = () => {
+    if (copiedItems.length === 0) return;
+    
+    // We're only pasting the first item (should be the only one anyway)
+    const itemToPaste = copiedItems[0];
+    
+    // Check if there are any existing clips at the playhead position that need to be split
+    const clipsToSplit = overlays.filter(overlay => {
+      // Check if this overlay's row is the same as the one we're pasting to
+      const isSameRow = overlay.row === itemToPaste.row;
+      
+      // Check if the playhead is within the overlay's time range
+      const isPlayheadInsideClip = 
+        currentFrame > overlay.from && 
+        currentFrame < (overlay.from + overlay.durationInFrames);
+      
+      return isSameRow && isPlayheadInsideClip;
+    });
+    
+    // Split any clips that the playhead is currently over
+    // We need to do this before pasting to make space for our pasted clip
+    clipsToSplit.forEach(clip => {
+      splitOverlay(clip.id, currentFrame);
+    });
+    
+    // Now check for any clips that start exactly at the playhead position
+    // We need to move these clips out of the way
+    const clipsStartingAtPlayhead = overlays.filter(overlay => {
+      return overlay.row === itemToPaste.row && overlay.from === currentFrame;
+    });
+    
+    // We need to move any clips that start at playhead position by the duration of our pasted item
+    const pasteShiftDistance = itemToPaste.durationInFrames;
+    
+    // Move all clips that start at the playhead position
+    clipsStartingAtPlayhead.forEach(clip => {
+      handleOverlayChange({
+        ...clip,
+        from: clip.from + pasteShiftDistance // Push the clip forward
+      });
+    });
+    
+    // Now duplicate our item to be pasted
+    duplicateOverlay(itemToPaste.id);
+    
+    // Get the ID of the newly created item (should be the highest ID)
+    const newItemId = Math.max(...overlays.map(o => o.id));
+    
+    // Position the pasted item at the playhead
+    if (newItemId) {
+      const newItem = overlays.find(o => o.id === newItemId);
+      if (newItem) {
+        handleOverlayChange({
+          ...newItem,
+          from: currentFrame // Place exactly at playhead position
+        });
+      }
+    }
+    
+    console.log(`Pasted item at frame ${currentFrame}, after splitting existing clips`);
+  }
 
   /**
    * Mobile fallback UI
@@ -127,6 +237,11 @@ export const Editor: React.FC = () => {
         currentFrame={currentFrame}
         totalDuration={durationInFrames}
         formatTime={formatTime}
+        selectAll={selectAll}
+        deleteSelected={deleteSelected}
+        splitAtCurrentTime={handleSplitAtCurrentTime}
+        copySelected={handleCopySelected}
+        pasteItems={handlePasteItems}
       />
 
       <Timeline
@@ -135,6 +250,15 @@ export const Editor: React.FC = () => {
         durationInFrames={durationInFrames}
         selectedOverlayId={selectedOverlayId}
         setSelectedOverlayId={setSelectedOverlayId}
+        selectedOverlayIds={selectedOverlayIds}
+        setSelectedOverlayIds={setSelectedOverlayIds}
+        addToSelection={addToSelection}
+        removeFromSelection={removeFromSelection}
+        clearSelection={clearSelection}
+        isSelected={isSelected}
+        toggleSelection={toggleSelection}
+        selectAll={selectAll}
+        deleteSelected={deleteSelected}
         onOverlayChange={handleOverlayChange}
         onOverlayDelete={deleteOverlay}
         onOverlayDuplicate={duplicateOverlay}
