@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect } from "react"
+import React, { useState, useEffect, useMemo } from "react"
 import { ImageOffIcon as OpacityIcon, RotateCcw, ChevronRight, ChevronDown, Clock, Plus, X, Minus, RefreshCw, Trash2, ArrowLeft, ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
@@ -9,8 +9,11 @@ import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import type { ImageOverlay } from "../../../../types"
-import { TabBaseProps, OpacityKeyframe } from "../image-transform-types"
-import { OpacityKeyframeTimeline } from "./opacity-keyframe-timeline"
+import { TabBaseProps, OpacityKeyframe, generateKeyframeId, formatters } from "../image-transform-types"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { KeyframeTimeline } from "./keyframe-timeline"
 
 interface OpacityTabProps extends TabBaseProps {
   localOverlay: ImageOverlay
@@ -48,11 +51,19 @@ export const OpacityTab: React.FC<OpacityTabProps> = ({
   const [dragPreviewValue, setDragPreviewValue] = useState<number | null>(null)
   
   // Add additional states for keyframe interaction
-  const [timelineDragActive, setTimelineDragActive] = useState<boolean>(false)
   const [showCurvePreview, setShowCurvePreview] = useState<boolean>(false)
-  
-  // Timeline scrubbing state
-  const [scrubPosition, setScrubPosition] = useState<number | null>(null)
+
+  // Sort keyframes by frame number for display
+  const sortedKeyframes = useMemo(() => {
+    return [...opacityKeyframes].sort((a, b) => a.frame - b.frame)
+  }, [opacityKeyframes])
+
+  // Check if there's a keyframe at the current frame
+  const hasKeyframeAtCurrentFrame = useMemo(() => {
+    if (currentFrame === undefined) return false
+    const relativeFrame = currentFrame - localOverlay.from
+    return opacityKeyframes.some(kf => kf.frame === relativeFrame)
+  }, [currentFrame, localOverlay.from, opacityKeyframes])
 
   // Basic linear interpolation function
   const interpolate = (frame: number, inputRange: number[], outputRange: number[]) => {
@@ -68,26 +79,8 @@ export const OpacityTab: React.FC<OpacityTabProps> = ({
     return outputRange[0]
   }
 
-  // Get opacity value at a specific frame by interpolating between keyframes
-  const getInterpolatedOpacity = (frame: number) => {
-    if (!useFrameInterpolation || opacityKeyframes.length < 2) return opacityValue
-
-    // Sort keyframes by frame number
-    const sortedKeyframes = [...opacityKeyframes].sort((a, b) => a.frame - b.frame)
-
-    // Extract frame numbers and opacity values for interpolation
-    const frames = sortedKeyframes.map((kf) => kf.frame)
-    const values = sortedKeyframes.map((kf) => kf.value)
-
-    // Interpolate based on current frame
-    return interpolate(frame, frames, values)
-  }
-  
-  // Generate unique ID for keyframes
-  const generateKeyframeId = () => `kf_${Date.now()}_${Math.floor(Math.random() * 1000)}`
-  
-  // Update function to add keyframe with ID
-  const addKeyframeAtCurrentFrame = () => {
+  // Add a keyframe at the current time
+  const addKeyframeAtCurrentTime = () => {
     if (currentFrame === undefined) return
 
     // Convert global timeline frame to local overlay frame
@@ -130,507 +123,389 @@ export const OpacityTab: React.FC<OpacityTabProps> = ({
     setLastInterpolatedOpacity(opacityValue)
     handleStyleChange({ opacity: opacityValue })
   }
-  
-  // Update function to update a specific keyframe's opacity
-  const updateKeyframeOpacity = (frame: number, newOpacity: number) => {
-    const keyframeIndex = opacityKeyframes.findIndex((kf) => kf.frame === frame)
 
-    if (keyframeIndex >= 0) {
-      // Convert from percentage (0-100) to decimal (0-1)
-      const normalizedOpacity = newOpacity / 100
-
-      // Update the keyframe
-      const updatedKeyframes = [...opacityKeyframes]
-      updatedKeyframes[keyframeIndex].value = normalizedOpacity
-      setOpacityKeyframes(updatedKeyframes)
-
-      // Apply the change if we're at that keyframe
-      if (currentFrame === frame) {
-        setOpacityValue(normalizedOpacity)
-        setLastInterpolatedOpacity(normalizedOpacity)
-        handleStyleChange({ opacity: normalizedOpacity })
-      } else {
-        // Update the interpolated value at current frame
-        const interpolatedValue = getInterpolatedOpacity(currentFrame || 0)
-        setLastInterpolatedOpacity(interpolatedValue)
-        handleStyleChange({ opacity: interpolatedValue })
-      }
-
-      // Notify parent if needed
-      if (onKeyframeChange) {
-        onKeyframeChange(updatedKeyframes)
-      }
+  // Update opacity and handle keyframe updates
+  const updateOpacity = (value: number) => {
+    setOpacityValue(value)
+    
+    // If there's a keyframe at the current time, update it
+    if (hasKeyframeAtCurrentFrame && currentFrame !== undefined) {
+      const relativeFrame = currentFrame - localOverlay.from
+      updateKeyframeOpacity(relativeFrame, value)
+    } else {
+      // Otherwise, just update the style
+      setLastInterpolatedOpacity(value)
+      handleStyleChange({ opacity: value })
     }
   }
-  
-  // Remove a keyframe
-  const removeKeyframe = (frame: number) => {
-    // Don't remove if it would leave less than 2 keyframes
-    if (opacityKeyframes.length <= 2) {
-      return
-    }
 
-    const updatedKeyframes = opacityKeyframes.filter((kf) => kf.frame !== frame)
+  // Update the value of a specific keyframe
+  const updateKeyframeOpacity = (frame: number, value: number) => {
+    const updatedKeyframes = opacityKeyframes.map(kf => 
+      kf.frame === frame ? { ...kf, value } : kf
+    )
     
-    // Update local state
     setOpacityKeyframes(updatedKeyframes)
-    
-    // Update overlay
-    handleStyleChange({
-      keyframes: [...updatedKeyframes]
-    } as any)
     
     // Notify parent if needed
     if (onKeyframeChange) {
       onKeyframeChange(updatedKeyframes)
     }
     
-    // If the current frame had a keyframe, update the interpolated opacity
-    if (currentFrame === frame) {
-      const interpolatedValue = getInterpolatedOpacity(currentFrame)
-      setLastInterpolatedOpacity(interpolatedValue)
-      handleStyleChange({ opacity: interpolatedValue })
+    // Update the local opacity value
+    setOpacityValue(value)
+    setLastInterpolatedOpacity(value)
+    handleStyleChange({ opacity: value })
+  }
+
+  // Edit a keyframe value directly
+  const editKeyframeValue = (frame: number, newValue: number) => {
+    // Ensure value is within valid range (0-100%)
+    const clampedValue = Math.max(0, Math.min(1, newValue / 100))
+    
+    // Update the keyframe
+    updateKeyframeOpacity(frame, clampedValue)
+  }
+
+  // Select a keyframe to highlight it
+  const selectKeyframe = (frame: number) => {
+    setActiveKeyframe(frame)
+    
+    // Find the keyframe
+    const keyframe = opacityKeyframes.find(kf => kf.frame === frame)
+    if (keyframe) {
+      // Update the local opacity value to match the keyframe
+      setOpacityValue(keyframe.value)
+      setLastInterpolatedOpacity(keyframe.value)
+      handleStyleChange({ opacity: keyframe.value })
+      
+      // Move playhead to this frame
+      navigateToRelativeFrame(frame)
     }
   }
-  
-  // Update keyframe position (frame) when dragged
-  const updateKeyframePosition = (originalFrame: number, newFrame: number) => {
-    if (newFrame < 0 || newFrame > localOverlay.durationInFrames) return
+
+  // Remove a keyframe at a specific frame
+  const removeKeyframe = (frame: number) => {
+    const updatedKeyframes = opacityKeyframes.filter(kf => kf.frame !== frame)
+    setOpacityKeyframes(updatedKeyframes)
     
-    const keyframeIndex = opacityKeyframes.findIndex(kf => kf.frame === originalFrame)
-    if (keyframeIndex >= 0) {
-      // Check if there's already a keyframe at the target position
-      const existingKeyframeAtTarget = opacityKeyframes.find(kf => kf.frame === newFrame && kf.frame !== originalFrame)
-      if (existingKeyframeAtTarget) {
-        // If there's a keyframe at the target, don't move
-        return
-      }
+    // Clear active keyframe if it was the one removed
+    if (activeKeyframe === frame) {
+      setActiveKeyframe(null)
+    }
+    
+    // Notify parent if needed
+    if (onKeyframeChange) {
+      onKeyframeChange(updatedKeyframes)
+    }
+  }
+
+  // Move a keyframe from one frame to another
+  const updateKeyframePosition = (oldFrame: number, newFrame: number) => {
+    // Check if there's already a keyframe at the new position
+    const existingKeyframeAtTarget = opacityKeyframes.find(kf => kf.frame === newFrame)
+    
+    if (existingKeyframeAtTarget && oldFrame !== newFrame) {
+      // If there's already a keyframe at the target position, we need to handle conflict
+      // For now, we'll just overwrite the target keyframe
+      const keyframeToMove = opacityKeyframes.find(kf => kf.frame === oldFrame)
+      if (!keyframeToMove) return
       
-      // Create updated keyframes with the moved keyframe
-      const updatedKeyframes = [...opacityKeyframes]
-      updatedKeyframes[keyframeIndex] = {
-        ...updatedKeyframes[keyframeIndex],
-        frame: newFrame
-      }
+      const updatedKeyframes = opacityKeyframes
+        .filter(kf => kf.frame !== oldFrame && kf.frame !== newFrame)
+        .concat([{ ...keyframeToMove, frame: newFrame }])
       
-      // Update keyframes
       setOpacityKeyframes(updatedKeyframes)
+      setActiveKeyframe(newFrame)
       
-      // Notify parent component
+      // Notify parent if needed
+      if (onKeyframeChange) {
+        onKeyframeChange(updatedKeyframes)
+      }
+    } else {
+      // If there's no keyframe at the target position, just move it
+      const updatedKeyframes = opacityKeyframes.map(kf => 
+        kf.frame === oldFrame ? { ...kf, frame: newFrame } : kf
+      )
+      
+      setOpacityKeyframes(updatedKeyframes)
+      setActiveKeyframe(newFrame)
+      
+      // Notify parent if needed
       if (onKeyframeChange) {
         onKeyframeChange(updatedKeyframes)
       }
     }
   }
 
-  // Initialize keyframes on first load or when interpolation is enabled
-  useEffect(() => {
-    if (useFrameInterpolation && opacityKeyframes.length === 0) {
-      // If overlay has keyframes, use them
-      if (localOverlay.keyframes && localOverlay.keyframes.length >= 2) {
-        setOpacityKeyframes([...localOverlay.keyframes])
-      } else {
-        // Create default keyframes if none exist
-        setOpacityKeyframes([
-          { frame: 0, value: opacityValue, id: generateKeyframeId() }, // First frame
-          { frame: localOverlay.durationInFrames, value: opacityValue, id: generateKeyframeId() }, // Last frame
-        ])
-      }
-    }
-  }, [useFrameInterpolation])
-
-  // Save keyframes to overlay when they change
-  useEffect(() => {
-    if (useFrameInterpolation && opacityKeyframes.length >= 2) {
-      // Update overlay with keyframes
-      handleStyleChange({
-        keyframes: [...opacityKeyframes]
-      } as any) // Type cast needed due to keyframes being added to styles
-    }
-  }, [opacityKeyframes, useFrameInterpolation])
-
-  // Update interpolated opacity when current frame or keyframes change
-  useEffect(() => {
-    if (useFrameInterpolation && currentFrame !== undefined && opacityKeyframes.length >= 2) {
-      const interpolatedValue = getInterpolatedOpacity(currentFrame)
-
-      // Only update if the value has changed significantly
-      if (Math.abs(interpolatedValue - lastInterpolatedOpacity) > 0.01) {
-        setLastInterpolatedOpacity(interpolatedValue)
-        handleStyleChange({ opacity: interpolatedValue })
-      }
-    } else if (!useFrameInterpolation && lastInterpolatedOpacity !== opacityValue) {
-      // If interpolation is turned off, reset to the base opacity
-      setLastInterpolatedOpacity(opacityValue)
-      handleStyleChange({ opacity: opacityValue })
-    }
-  }, [currentFrame, useFrameInterpolation, opacityKeyframes, opacityValue])
-
-  // Sync with overlay on change
-  useEffect(() => {
-    // Only update opacity value from localOverlay if not using frame interpolation
-    if (!useFrameInterpolation) {
-      setOpacityValue(localOverlay.styles.opacity ?? 1)
-    }
-  }, [localOverlay.styles.opacity, useFrameInterpolation])
-
-  // When frame interpolation is toggled on/off, update opacity accordingly
-  useEffect(() => {
-    if (useFrameInterpolation && currentFrame !== undefined) {
-      // When turning on, immediately apply the interpolated value
-      const interpolatedValue = getInterpolatedOpacity(currentFrame)
-      setLastInterpolatedOpacity(interpolatedValue)
-      handleStyleChange({ opacity: interpolatedValue })
-    } else if (!useFrameInterpolation) {
-      // When turning off, reset to the base opacity
-      setLastInterpolatedOpacity(opacityValue)
-      handleStyleChange({ opacity: opacityValue })
-    }
-  }, [useFrameInterpolation])
-
-  // Opacity update handler
-  const updateOpacity = (percent: number) => {
-    const o = percent / 100
-    setOpacityValue(o)
-
-    // If frame interpolation is off, apply opacity directly
-    if (!useFrameInterpolation) {
-      setLastInterpolatedOpacity(o)
-      handleStyleChange({ opacity: o })
-    } else if (currentFrame !== undefined) {
-      // If at a keyframe position, update that keyframe
-      const keyframeIndex = opacityKeyframes.findIndex((kf) => kf.frame === currentFrame)
-      if (keyframeIndex >= 0) {
-        // Update the keyframe and apply the change
-        const updatedKeyframes = [...opacityKeyframes]
-        updatedKeyframes[keyframeIndex].value = o
-        setOpacityKeyframes(updatedKeyframes)
-      }
-
-      // Apply the interpolated opacity value
-      const interpolatedValue = getInterpolatedOpacity(currentFrame)
-      setLastInterpolatedOpacity(interpolatedValue)
-      handleStyleChange({ opacity: interpolatedValue })
-    }
-  }
-
-  // Reset opacity
-  const resetOpacity = () => updateOpacity(100)
-  
-  // Toggle curve preview visibility
-  const toggleCurvePreview = () => {
-    setShowCurvePreview(prev => !prev)
-  }
-  
-  // Add keyboard shortcut handlers
-  useEffect(() => {
-    const handleKeydown = (e: KeyboardEvent) => {
-      // Skip if in an input field
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        e.target instanceof HTMLSelectElement
-      ) {
-        return
-      }
-      
-      if (useFrameInterpolation) {
-        // Next keyframe: Right arrow
-        if (e.key === 'ArrowRight' && e.altKey) {
-          e.preventDefault()
-          navigateToNextKeyframe()
-        }
-        
-        // Previous keyframe: Left arrow
-        if (e.key === 'ArrowLeft' && e.altKey) {
-          e.preventDefault()
-          navigateToPrevKeyframe()
-        }
-        
-        // Add keyframe: K key
-        if (e.key === 'k' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-          e.preventDefault()
-          addKeyframeAtCurrentFrame()
-        }
-        
-        // Delete active keyframe: Delete key
-        if ((e.key === 'Delete' || e.key === 'Backspace') && activeKeyframe !== null) {
-          e.preventDefault()
-          removeKeyframe(activeKeyframe)
-          setActiveKeyframe(null)
-        }
-      }
-      
-      // Toggle curve view: V key
-      if (e.key === 'v' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault()
-        toggleCurvePreview()
-      }
-    }
+  // Navigation between keyframes
+  const navigateToRelativeFrame = (frame: number) => {
+    if (currentFrame === undefined) return
     
-    window.addEventListener('keydown', handleKeydown)
-    return () => {
-      window.removeEventListener('keydown', handleKeydown)
+    // Convert relative frame to global frame
+    const globalFrame = localOverlay.from + frame
+    
+    // Update the parent component's current frame
+    if (onKeyframeChange) {
+      // This is a simplification - you'd need to implement a proper callback
+      // to update the player position in your actual application
+      // For example: props.onSeek(globalFrame)
+      console.log('Navigate to frame:', globalFrame)
     }
-  }, [useFrameInterpolation, activeKeyframe, currentFrame, opacityKeyframes])
+  }
 
-  // Select a keyframe as active
-  const selectKeyframe = (frame: number) => {
-    setActiveKeyframe(frame)
-    
-    // Find this keyframe in the list
-    const keyframe = opacityKeyframes.find(kf => kf.frame === frame)
-    if (keyframe && currentFrame !== undefined) {
-      // Navigate to this keyframe
-      navigateToRelativeFrame(frame)
-      
-      // Set the opacity value to match this keyframe
-      const newOpacity = keyframe.value * 100
-      updateOpacity(newOpacity)
-    }
-  }
-  
-  // Edit a keyframe's value directly
-  const editKeyframeValue = (frame: number, newValue: number) => {
-    const normalizedValue = Math.max(0, Math.min(100, newValue)) / 100
-    updateKeyframeOpacity(frame, normalizedValue * 100)
-  }
-  
-  // Frame navigation function
-  const navigateToRelativeFrame = (frameOffset: number) => {
-    // Calculate the new position in global timeline coordinates
-    const targetFrame = localOverlay.from + frameOffset
-    
-    // This would typically update the global timeline position
-    console.log(`Navigate to frame: ${targetFrame} (${frameOffset} in clip)`)
-    
-    // For demo purposes, we can just log this
-    // In a real implementation, this would update the player's current frame
-  }
-  
-  // Jump to next or previous keyframe
+  // Navigate to the next keyframe
   const navigateToNextKeyframe = () => {
-    if (!useFrameInterpolation || opacityKeyframes.length < 2 || currentFrame === undefined) return
+    if (opacityKeyframes.length === 0) return
     
-    // Convert current position to relative frame
-    const relativeFrame = currentFrame - localOverlay.from
+    // Sort keyframes by frame position
+    const sortedFrames = [...opacityKeyframes].sort((a, b) => a.frame - b.frame).map(kf => kf.frame)
     
-    // Find the next keyframe after current position
-    const sortedFrames = [...opacityKeyframes].sort((a, b) => a.frame - b.frame)
-    const nextKeyframe = sortedFrames.find(kf => kf.frame > relativeFrame)
+    if (activeKeyframe === null) {
+      // If no keyframe is active, go to the first one
+      const firstKeyframe = sortedFrames[0]
+      navigateToRelativeFrame(firstKeyframe)
+      setActiveKeyframe(firstKeyframe)
+      return
+    }
     
-    if (nextKeyframe) {
-      navigateToRelativeFrame(nextKeyframe.frame)
-      setActiveKeyframe(nextKeyframe.frame)
+    // Find the index of the active keyframe
+    const currentIndex = sortedFrames.indexOf(activeKeyframe)
+    
+    if (currentIndex === -1) {
+      // Active keyframe not found in list, go to first
+      const firstKeyframe = sortedFrames[0]
+      navigateToRelativeFrame(firstKeyframe)
+      setActiveKeyframe(firstKeyframe)
+    } else if (currentIndex < sortedFrames.length - 1) {
+      // Go to next keyframe
+      const nextKeyframe = sortedFrames[currentIndex + 1]
+      navigateToRelativeFrame(nextKeyframe)
+      setActiveKeyframe(nextKeyframe)
+    } else {
+      // At last keyframe, loop to first
+      const firstKeyframe = sortedFrames[0]
+      navigateToRelativeFrame(firstKeyframe)
+      setActiveKeyframe(firstKeyframe)
     }
   }
 
+  // Navigate to the previous keyframe
   const navigateToPrevKeyframe = () => {
-    if (!useFrameInterpolation || opacityKeyframes.length < 2 || currentFrame === undefined) return
+    if (opacityKeyframes.length === 0) return
     
-    // Convert current position to relative frame
-    const relativeFrame = currentFrame - localOverlay.from
+    // Sort keyframes by frame position
+    const sortedFrames = [...opacityKeyframes].sort((a, b) => a.frame - b.frame).map(kf => kf.frame)
     
-    // Find the previous keyframe before current position
-    const sortedFrames = [...opacityKeyframes].sort((a, b) => a.frame - b.frame)
-    const prevKeyframes = sortedFrames.filter(kf => kf.frame < relativeFrame)
+    if (activeKeyframe === null) {
+      // If no keyframe is active, go to the last one
+      const lastKeyframe = sortedFrames[sortedFrames.length - 1]
+      navigateToRelativeFrame(lastKeyframe)
+      setActiveKeyframe(lastKeyframe)
+      return
+    }
     
-    if (prevKeyframes.length > 0) {
-      const prevKeyframe = prevKeyframes[prevKeyframes.length - 1]
-      navigateToRelativeFrame(prevKeyframe.frame)
-      setActiveKeyframe(prevKeyframe.frame)
+    // Find the index of the active keyframe
+    const currentIndex = sortedFrames.indexOf(activeKeyframe)
+    
+    if (currentIndex === -1) {
+      // Active keyframe not found in list, go to last
+      const lastKeyframe = sortedFrames[sortedFrames.length - 1]
+      navigateToRelativeFrame(lastKeyframe)
+      setActiveKeyframe(lastKeyframe)
+    } else if (currentIndex > 0) {
+      // Go to previous keyframe
+      const prevKeyframe = sortedFrames[currentIndex - 1]
+      navigateToRelativeFrame(prevKeyframe)
+      setActiveKeyframe(prevKeyframe)
+    } else {
+      // At first keyframe, loop to last
+      const lastKeyframe = sortedFrames[sortedFrames.length - 1]
+      navigateToRelativeFrame(lastKeyframe)
+      setActiveKeyframe(lastKeyframe)
     }
   }
-  
-  // Check if current frame has a keyframe
-  const hasKeyframeAtCurrentFrame =
-    currentFrame !== undefined && opacityKeyframes.some((kf) => kf.frame === (currentFrame - localOverlay.from))
-  
-  // Function wrapper
-  const addKeyframeAtCurrentTime = () => {
-    addKeyframeAtCurrentFrame()
+
+  // Toggle curve preview
+  const toggleCurvePreview = () => {
+    setShowCurvePreview(!showCurvePreview)
   }
-  
-  // Sort keyframes for display
-  const sortedKeyframes = [...opacityKeyframes].sort((a, b) => a.frame - b.frame)
+
+  // Generate curve visualization points
+  const generateCurvePoints = () => {
+    if (opacityKeyframes.length < 2) return ''
+    
+    const sortedFrames = [...opacityKeyframes].sort((a, b) => a.frame - b.frame)
+    
+    // Generate path for the curve visualization
+    return sortedFrames.map(kf => {
+      // Convert frame to X position (0-100) and opacity to Y position (0-100, inverted)
+      const x = (kf.frame / localOverlay.durationInFrames) * 100
+      const y = (1 - kf.value) * 100 // Inverted so 0 opacity is at bottom
+      return `${x},${y}`
+    }).join(' ')
+  }
+
+  // Get interpolated opacity at any frame
+  const getInterpolatedOpacity = (frame: number) => {
+    if (opacityKeyframes.length === 0) return opacityValue
+    if (opacityKeyframes.length === 1) return opacityKeyframes[0].value
+    
+    // Get sorted keyframes
+    const sortedFrames = [...opacityKeyframes].sort((a, b) => a.frame - b.frame)
+    
+    // Check if before first keyframe or after last keyframe
+    if (frame <= sortedFrames[0].frame) return sortedFrames[0].value
+    if (frame >= sortedFrames[sortedFrames.length - 1].frame) return sortedFrames[sortedFrames.length - 1].value
+    
+    // Find the two keyframes to interpolate between
+    for (let i = 0; i < sortedFrames.length - 1; i++) {
+      if (frame >= sortedFrames[i].frame && frame <= sortedFrames[i + 1].frame) {
+        // Linear interpolation between keyframes
+        const t = (frame - sortedFrames[i].frame) / (sortedFrames[i + 1].frame - sortedFrames[i].frame)
+        return sortedFrames[i].value + t * (sortedFrames[i + 1].value - sortedFrames[i].value)
+      }
+    }
+    
+    // Fallback
+    return opacityValue
+  }
+
+  // Effect to update opacity when current frame changes (for keyframe interpolation)
+  useEffect(() => {
+    if (!useFrameInterpolation || currentFrame === undefined || opacityKeyframes.length < 2) return
+    
+    // Convert to relative frame
+    const relativeFrame = currentFrame - localOverlay.from
+    
+    // Get interpolated opacity for the current frame
+    const interpolatedOpacity = getInterpolatedOpacity(relativeFrame)
+    
+    // Only update if it has changed significantly (to avoid too many updates)
+    if (Math.abs(interpolatedOpacity - lastInterpolatedOpacity) > 0.001) {
+      setOpacityValue(interpolatedOpacity)
+      setLastInterpolatedOpacity(interpolatedOpacity)
+      handleStyleChange({ opacity: interpolatedOpacity })
+    }
+  }, [currentFrame, useFrameInterpolation, opacityKeyframes, lastInterpolatedOpacity, localOverlay.from])
 
   return (
-    <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-black shadow-sm overflow-hidden">
-      <div 
-        className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-900 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800/70 transition-colors"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <div className="flex items-center gap-1.5 text-xs font-medium">
-          {expanded ? <ChevronDown size={14} className="text-gray-500" /> : <ChevronRight size={14} />}
-          <div className="flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-800">
-            <OpacityIcon size={10} className="text-gray-700 dark:text-gray-300" />
-          </div>
+    <Collapsible open={expanded} onOpenChange={setExpanded}>
+      <CollapsibleTrigger className="flex w-full items-center justify-between py-2 text-sm font-medium">
+        <div className="flex items-center gap-2">
+          <ChevronRight 
+            className={cn(
+              "h-4 w-4 transition-transform duration-200",
+              expanded ? "rotate-90" : ""
+            )} 
+          />
           <span>Opacity</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <div className="text-[10px] font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded min-w-[50px] text-center">
-            {(opacityValue * 100).toFixed(0)}%
-            {useFrameInterpolation && <span className="text-gray-500 text-[8px] ml-0.5">*</span>}
-          </div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  resetOpacity()
-                }}
-              >
-                <RotateCcw size={12} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="left">Reset opacity</TooltipContent>
-          </Tooltip>
+        <div className="mr-2 text-xs text-muted-foreground">
+          {Math.round(opacityValue * 100)}%
         </div>
-      </div>
-      {expanded && (
-        <div className="p-3 space-y-3 border-t border-gray-200 dark:border-gray-800">
-          <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400 mb-1">
-            <span>Transparency</span>
-            <span className="text-[10px] font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
-              {(opacityValue * 100).toFixed(0)}%
-              {useFrameInterpolation && currentFrame !== undefined && (
-                <span className="text-gray-500 text-[8px] ml-0.5">
-                  → {(getInterpolatedOpacity(currentFrame) * 100).toFixed(0)}%
-                </span>
-              )}
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="h-6 w-6 bg-white dark:bg-gray-900"
-                  onClick={() => updateOpacity(Math.max(0, opacityValue * 100 - 5))}
-                >
-                  <Minus size={12} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Decrease opacity</TooltipContent>
-            </Tooltip>
-            <Slider
-              value={[opacityValue * 100]}
-              min={0}
-              max={100}
-              step={1}
-              onValueChange={(v) => updateOpacity(v[0])}
-              className="flex-1"
+      </CollapsibleTrigger>
+      
+      <CollapsibleContent className="pb-2 pt-1">
+        <div className="space-y-4">
+          {/* Animation settings */}
+          <div className="flex items-center justify-between px-2">
+            <Label htmlFor="enable-keyframes" className="text-xs font-normal cursor-pointer">
+              Enable keyframe animation
+            </Label>
+            <Switch
+              id="enable-keyframes"
+              checked={useFrameInterpolation}
+              onCheckedChange={setUseFrameInterpolation}
             />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="h-6 w-6 bg-white dark:bg-gray-900"
-                  onClick={() => updateOpacity(Math.min(100, opacityValue * 100 + 5))}
-                >
-                  <Plus size={12} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Increase opacity</TooltipContent>
-            </Tooltip>
           </div>
-
-          <Separator className="my-2" />
-
-          <div className="grid grid-cols-3 gap-1.5">
-            {[25, 50, 100].map((p) => (
-              <Tooltip key={p}>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant={Math.abs(opacityValue * 100 - p) < 1 ? "default" : "outline"} 
-                    className={cn(
-                      "bg-white dark:bg-gray-900 text-xs h-7",
-                      Math.abs(opacityValue * 100 - p) < 1 && "bg-gray-800 text-white hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
-                    )}
-                    onClick={() => updateOpacity(p)}
-                  >
-                    {p}%
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{p === 100 ? "Fully visible" : `${p}% opacity`}</TooltipContent>
-              </Tooltip>
-            ))}
-          </div>
-
-          {/* Keyframe animation toggle */}
-          {totalFrames > 0 && (
-            <>
-              <Separator className="my-2" />
-              
-              <div className="flex items-center justify-between">
-                <div className="flex flex-col">
-                  <span className="text-xs font-medium">Keyframe Animation</span>
-                  <span className="text-[10px] text-gray-500 dark:text-gray-400">
-                    Animate opacity over time
+          
+          {/* Only show regular opacity slider when keyframing is disabled */}
+          {!useFrameInterpolation && (
+            <div className="flex items-start justify-between">
+              <Label htmlFor="opacity" className="text-xs font-normal text-muted-foreground w-16 mt-1.5">
+                Opacity
+              </Label>
+              <div className="flex-1 space-y-1">
+                <div className="flex items-center">
+                  <Slider
+                    id="opacity"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={[opacityValue]}
+                    onValueChange={([value]) => updateOpacity(value)}
+                    aria-label="Opacity"
+                    className="mr-3"
+                  />
+                  <span className="w-9 text-xs tabular-nums text-muted-foreground">
+                    {Math.round(opacityValue * 100)}%
                   </span>
                 </div>
-                <Button
-                  variant={useFrameInterpolation ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setUseFrameInterpolation(!useFrameInterpolation)}
-                  className="gap-1 h-7 text-xs"
-                >
-                  {useFrameInterpolation ? (
-                    <>
-                      <Clock size={12} className="text-white" /> Enabled
-                    </>
-                  ) : (
-                    <>
-                      <Clock size={12} /> Enable
-                    </>
-                  )}
-                </Button>
               </div>
-
-              {useFrameInterpolation && (
-                <>
-                  <Separator className="my-2" />
-
-                  {/* Timeline UI and keyframe editing */}
-                  <OpacityKeyframeTimeline
-                    localOverlay={localOverlay}
-                    currentFrame={currentFrame}
-                    opacityKeyframes={opacityKeyframes}
-                    activeKeyframe={activeKeyframe}
-                    useFrameInterpolation={useFrameInterpolation}
-                    showCurvePreview={showCurvePreview}
-                    draggedKeyframeFrame={draggedKeyframeFrame}
-                    dragPreviewValue={dragPreviewValue}
-                    dragStartX={dragStartX}
-                    opacityValue={opacityValue}
-                    hasKeyframeAtCurrentFrame={hasKeyframeAtCurrentFrame}
-                    getInterpolatedOpacity={getInterpolatedOpacity}
-                    toggleCurvePreview={toggleCurvePreview}
-                    addKeyframeAtCurrentTime={addKeyframeAtCurrentTime}
-                    selectKeyframe={selectKeyframe}
-                    updateKeyframePosition={updateKeyframePosition}
-                    removeKeyframe={removeKeyframe}
-                    navigateToNextKeyframe={navigateToNextKeyframe}
-                    navigateToPrevKeyframe={navigateToPrevKeyframe}
-                    navigateToRelativeFrame={navigateToRelativeFrame}
-                    updateOpacity={updateOpacity}
-                    setActiveKeyframe={setActiveKeyframe}
-                    updateKeyframeOpacity={updateKeyframeOpacity}
-                    editKeyframeValue={editKeyframeValue}
-                    setDraggedKeyframeFrame={setDraggedKeyframeFrame}
-                    setDragStartX={setDragStartX}
-                    setDragPreviewValue={setDragPreviewValue}
-                    sortedKeyframes={sortedKeyframes}
-                  />
-                </>
-              )}
-            </>
+            </div>
+          )}
+          
+          {/* Show keyframe controls when animation is enabled */}
+          {useFrameInterpolation && (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">Current Value</span>
+                  <span className="text-xs font-medium">{Math.round(opacityValue * 100)}%</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-xs"
+                    onClick={addKeyframeAtCurrentTime}
+                    disabled={currentFrame < localOverlay.from || currentFrame >= localOverlay.from + localOverlay.durationInFrames}
+                  >
+                    {hasKeyframeAtCurrentFrame ? "Update Keyframe" : "Add Keyframe"}
+                  </Button>
+                </div>
+              </div>
+              
+              <KeyframeTimeline
+                overlayFrom={localOverlay.from}
+                durationInFrames={localOverlay.durationInFrames}
+                currentFrame={currentFrame}
+                keyframes={opacityKeyframes}
+                activeKeyframe={activeKeyframe}
+                useFrameInterpolation={useFrameInterpolation}
+                showCurvePreview={showCurvePreview}
+                draggedKeyframeFrame={draggedKeyframeFrame}
+                dragPreviewValue={dragPreviewValue}
+                dragStartX={dragStartX}
+                propertyValue={opacityValue}
+                hasKeyframeAtCurrentFrame={hasKeyframeAtCurrentFrame}
+                propertyLabel="Opacity"
+                valueFormatter={formatters.opacity}
+                curveColor="yellow"
+                getInterpolatedValue={getInterpolatedOpacity}
+                generateCurvePoints={generateCurvePoints}
+                toggleCurvePreview={toggleCurvePreview}
+                addKeyframeAtCurrentTime={addKeyframeAtCurrentTime}
+                selectKeyframe={selectKeyframe}
+                updateKeyframePosition={updateKeyframePosition}
+                removeKeyframe={removeKeyframe}
+                navigateToNextKeyframe={navigateToNextKeyframe}
+                navigateToPrevKeyframe={navigateToPrevKeyframe}
+                navigateToRelativeFrame={navigateToRelativeFrame}
+                updatePropertyValue={updateOpacity}
+                setActiveKeyframe={setActiveKeyframe}
+                updateKeyframeValue={updateKeyframeOpacity}
+                editKeyframeValue={editKeyframeValue}
+                setDraggedKeyframeFrame={setDraggedKeyframeFrame}
+                setDragStartX={setDragStartX}
+                setDragPreviewValue={setDragPreviewValue}
+                sortedKeyframes={sortedKeyframes}
+              />
+            </div>
           )}
         </div>
-      )}
-    </div>
+      </CollapsibleContent>
+    </Collapsible>
   )
 } 

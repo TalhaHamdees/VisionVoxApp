@@ -8,7 +8,7 @@ import { ScaleTab } from "./tabs/scale-tab"
 import { RotationTab } from "./tabs/rotation-tab"
 import { OpacityTab } from "./tabs/opacity-tab"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import type { OpacityKeyframe } from "./image-transform-types"
+import { SectionKey, OpacityKeyframe, PositionKeyframe, RotationKeyframe, ScaleKeyframe } from "./image-transform-types"
 
 interface ImageTransformPanelProps {
   localOverlay: ImageOverlay
@@ -16,10 +16,13 @@ interface ImageTransformPanelProps {
   handlePositionChange: (updates: Partial<Pick<ImageOverlay, "left" | "top" | "rotation">>) => void
   totalFrames?: number
   currentFrame?: number
-  onKeyframeChange?: (keyframes: OpacityKeyframe[]) => void
+  onKeyframeChange?: {
+    opacity?: (keyframes: OpacityKeyframe[]) => void
+    position?: (keyframes: PositionKeyframe[]) => void
+    rotation?: (keyframes: RotationKeyframe[]) => void
+    scale?: (keyframes: ScaleKeyframe[]) => void
+  }
 }
-
-type SectionKey = "position" | "scale" | "rotation" | "opacity"
 
 export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
   localOverlay,
@@ -27,7 +30,7 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
   handlePositionChange,
   totalFrames = 0,
   currentFrame = 0,
-  onKeyframeChange,
+  onKeyframeChange = {},
 }) => {
   // Expanded panels state
   const [expanded, setExpanded] = useState<Record<SectionKey, boolean>>({
@@ -45,6 +48,9 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
           handlePositionChange={handlePositionChange}
           expanded={expanded.position}
           setExpanded={(isExpanded) => setExpanded(prev => ({ ...prev, position: isExpanded }))}
+          totalFrames={totalFrames}
+          currentFrame={currentFrame}
+          onKeyframeChange={onKeyframeChange.position}
         />
 
         <ScaleTab 
@@ -52,6 +58,10 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
           handleStyleChange={handleStyleChange}
           expanded={expanded.scale}
           setExpanded={(isExpanded) => setExpanded(prev => ({ ...prev, scale: isExpanded }))}
+          totalFrames={totalFrames}
+          currentFrame={currentFrame}
+          // TODO: Implement keyframe support for scale
+          // onKeyframeChange={onKeyframeChange.scale}
         />
 
         <RotationTab 
@@ -59,6 +69,10 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
           handlePositionChange={handlePositionChange}
           expanded={expanded.rotation}
           setExpanded={(isExpanded) => setExpanded(prev => ({ ...prev, rotation: isExpanded }))}
+          totalFrames={totalFrames}
+          currentFrame={currentFrame}
+          // TODO: Implement keyframe support for rotation
+          // onKeyframeChange={onKeyframeChange.rotation}
         />
 
         <OpacityTab 
@@ -68,7 +82,7 @@ export const ImageTransformPanel: React.FC<ImageTransformPanelProps> = ({
           setExpanded={(isExpanded) => setExpanded(prev => ({ ...prev, opacity: isExpanded }))}
           totalFrames={totalFrames}
           currentFrame={currentFrame}
-          onKeyframeChange={onKeyframeChange}
+          onKeyframeChange={onKeyframeChange.opacity}
         />
             </div>
     </TooltipProvider>
