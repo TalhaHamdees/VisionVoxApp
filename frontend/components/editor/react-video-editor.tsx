@@ -85,6 +85,34 @@ export default function ReactVideoEditor() {
     isNewProject
   } = useProjectPersistence(overlays, currentFrame, aspectRatio);
 
+  // Listen for forced selection events from timeline
+  useEffect(() => {
+    const handleForceSelection = (event: Event) => {
+      const customEvent = event as CustomEvent<{id: number}>;
+      if (customEvent.detail && typeof customEvent.detail.id === 'number') {
+        console.log("Force selecting item ID:", customEvent.detail.id);
+        
+        // Force update both selection mechanisms
+        setSelectedOverlayId(customEvent.detail.id);
+        setSelectedOverlayIds(new Set([customEvent.detail.id]));
+        
+        // Log selection state after update
+        setTimeout(() => {
+          console.log("Selection state after force:", {
+            id: customEvent.detail.id,
+            selectedOverlayId,
+            selectedOverlayIdsSize: selectedOverlayIds.size
+          });
+        }, 10);
+      }
+    };
+
+    window.addEventListener('timeline:forceselection', handleForceSelection);
+    return () => {
+      window.removeEventListener('timeline:forceselection', handleForceSelection);
+    };
+  }, [setSelectedOverlayId, setSelectedOverlayIds]);
+
   // Load project on initial render if projectId is in URL
   useEffect(() => {
     const projectId = searchParams.get('projectId');

@@ -1,0 +1,2508 @@
+"use client"
+
+import type React from "react"
+import { useState, useEffect } from "react"
+import type { ImageOverlay } from "../../../types"
+import { Slider } from "@/components/ui/slider"
+import {
+  MoveHorizontal,
+  MoveVertical,
+  RotateCcw,
+  ChevronRight,
+  ChevronDown,
+  ImageOffIcon as OpacityIcon,
+  RotateCw,
+  Maximize2,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  ArrowDown,
+  Clock,
+  Plus,
+  X,
+  Minus,
+  RefreshCw,
+  Trash2,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
+import { Separator } from "@/components/ui/separator"
+import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
+
+// First, let's update the keyframe interface to support all properties
+// Replace the OpacityKeyframe interface with a more generic one
+// interface OpacityKeyframe {
+//   frame: number
+//   value: number
+//   id?: string // Add unique ID for better tracking
+// }
+
+// Replace with this more generic interface
+interface TransformKeyframe {
+  frame: number
+  property: "opacity" | "scale" | "positionX" | "positionY" | "rotation"
+  value: number
+  id?: string
+}
+
+// Define a keyframe type to store frame position and opacity value
+interface OpacityKeyframe {
+  frame: number
+  value: number
+  id?: string // Add unique ID for better tracking
+}
+
+// Update the ImageTransformPanelProps interface to handle all keyframe types
+interface ImageTransformPanelProps {
+  localOverlay: ImageOverlay
+  handleStyleChange: (updates: Partial<ImageOverlay["styles"]>) => void
+  handlePositionChange: (updates: Partial<Pick<ImageOverlay, "left" | "top" | "rotation">>) => void
+  totalFrames?: number
+  currentFrame?: number
+  onKeyframeChange?: (keyframes: OpacityKeyframe[]) => void
+}
+
+type SectionKey = "position" | "scale" | "rotation" | "opacity"
+
+// Change the component definition to a regular function that returns JSX
+export function ImageTransformPanel({
+  localOverlay,
+  handleStyleChange,
+  handlePositionChange,
+  totalFrames = 0,
+  currentFrame = 0,
+  onKeyframeChange,
+}: ImageTransformPanelProps) {
+  // Expanded panels state
+  const [expanded, setExpanded] = useState<Record<SectionKey, boolean>>({
+    position: true,
+    scale: true,
+    rotation: false,
+    opacity: false,
+  })
+
+  // Local controlled state for each value
+  const [posX, setPosX] = useState<number>(localOverlay.left)
+  const [posY, setPosY] = useState<number>(localOverlay.top)
+  const [scaleValue, setScaleValue] = useState<number>(
+    Number(localOverlay.styles.transform?.match(/scale$$([^)]+)$$/)?.[1] ?? 1),
+  )
+  const [rotationValue, setRotationValue] = useState<number>(localOverlay.rotation || 0)
+  const [opacityValue, setOpacityValue] = useState<number>(localOverlay.styles.opacity ?? 1)
+
+  // Frame interpolation settings for opacity
+  // const [useFrameInterpolation, setUseFrameInterpolation] = useState<boolean>(false)
+
+  // Update the state variables to handle keyframes for all properties
+  const [opacityKeyframes, setOpacityKeyframes] = useState<OpacityKeyframe[]>([])
+  const [scaleKeyframes, setScaleKeyframes] = useState<TransformKeyframe[]>([])
+  const [positionXKeyframes, setPositionXKeyframes] = useState<TransformKeyframe[]>([])
+  const [positionYKeyframes, setPositionYKeyframes] = useState<TransformKeyframe[]>([])
+  const [rotationKeyframes, setRotationKeyframes] = useState<TransformKeyframe[]>([])
+
+  // Add state for tracking which properties use frame interpolation
+  const [useFrameInterpolation, setUseFrameInterpolation] = useState<Record<SectionKey, boolean>>({
+    position: false,
+    scale: false,
+    rotation: false,
+    opacity: false,
+  })
+
+  // Add state for tracking active keyframes for each property
+  const [activeKeyframes, setActiveKeyframes] = useState<Record<string, number | null>>({
+    opacity: null,
+    scale: null,
+    positionX: null,
+    positionY: null,
+    rotation: null,
+  })
+
+  // Update the last interpolated values for all properties
+  const [lastInterpolatedValues, setLastInterpolatedValues] = useState<Record<string, number>>({
+    opacity: opacityValue,
+    scale: scaleValue,
+    positionX: posX,
+    positionY: posY,
+    rotation: rotationValue,
+  })
+
+  // Store keyframes for opacity
+  // const [opacityKeyframes, setOpacityKeyframes] = useState<OpacityKeyframe[]>([])
+
+  // Keep track of the last interpolated opacity to avoid unnecessary updates
+  const [lastInterpolatedOpacity, setLastInterpolatedOpacity] = useState<number>(opacityValue)
+
+  // Handle dragging keyframes in timeline
+  const [draggedKeyframeFrame, setDraggedKeyframeFrame] = useState<number | null>(null)
+  const [dragStartX, setDragStartX] = useState<number>(0)
+  const [activeKeyframe, setActiveKeyframe] = useState<number | null>(null)
+  const [dragPreviewValue, setDragPreviewValue] = useState<number | null>(null)
+
+  // Add additional states for keyframe interaction
+  const [timelineDragActive, setTimelineDragActive] = useState<boolean>(false)
+  const [showCurvePreview, setShowCurvePreview] = useState<boolean>(false)
+
+  // Update keyframe position (frame) when dragged
+  const updateKeyframePosition = (originalFrame: number, newFrame: number) => {
+    if (newFrame < 0 || newFrame > localOverlay.durationInFrames) return
+
+    const keyframeIndex = opacityKeyframes.findIndex((kf) => kf.frame === originalFrame)
+    if (keyframeIndex >= 0) {
+      // Check if there's already a keyframe at the target position
+      const existingKeyframeAtTarget = opacityKeyframes.find(
+        (kf) => kf.frame === newFrame && kf.frame !== originalFrame,
+      )
+      if (existingKeyframeAtTarget) {
+        // If there's a keyframe at the target, don't move
+        return
+      }
+
+      // Create updated keyframes with the moved keyframe
+      const updatedKeyframes = [...opacityKeyframes]
+      updatedKeyframes[keyframeIndex] = {
+        ...updatedKeyframes[keyframeIndex],
+        frame: newFrame,
+      }
+
+      // Update keyframes
+      setOpacityKeyframes(updatedKeyframes)
+
+      // Notify parent component
+      if (onKeyframeChange) {
+        onKeyframeChange(updatedKeyframes)
+      }
+    }
+  }
+
+  // Start dragging a keyframe
+  const handleKeyframeDragStart = (frame: number, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setDraggedKeyframeFrame(frame)
+    setDragStartX(e.clientX)
+    setActiveKeyframe(frame)
+
+    // Find the keyframe and get its current value
+    const keyframe = opacityKeyframes.find((kf) => kf.frame === frame)
+    if (keyframe) {
+      setDragPreviewValue(keyframe.value)
+    }
+  }
+
+  // Handle keyframe dragging
+  const handleKeyframeDrag = (e: MouseEvent) => {
+    if (draggedKeyframeFrame === null) return
+
+    // Calculate how many frames to move based on drag distance
+    const timelineEl = document.querySelector(".keyframe-timeline")
+    if (!timelineEl) return
+
+    const timelineWidth = timelineEl.getBoundingClientRect().width
+    const pixelsPerFrame = timelineWidth / localOverlay.durationInFrames
+    const deltaX = e.clientX - dragStartX
+    const frameDelta = Math.round(deltaX / pixelsPerFrame)
+
+    if (frameDelta !== 0) {
+      const targetFrame = Math.max(0, Math.min(localOverlay.durationInFrames, draggedKeyframeFrame + frameDelta))
+
+      // Update preview value during drag
+      setDragPreviewValue((prev) => prev)
+
+      // Move keyframe
+      updateKeyframePosition(draggedKeyframeFrame, targetFrame)
+      setDraggedKeyframeFrame(targetFrame)
+      setDragStartX(e.clientX)
+    }
+  }
+
+  // End dragging
+  const handleKeyframeDragEnd = () => {
+    setDraggedKeyframeFrame(null)
+    setDragPreviewValue(null)
+  }
+
+  // Select a keyframe as active
+  const selectKeyframe = (frame: number) => {
+    setActiveKeyframe(frame)
+
+    // Find this keyframe in the list
+    const keyframe = opacityKeyframes.find((kf) => kf.frame === frame)
+    if (keyframe && currentFrame !== undefined) {
+      // Navigate to this keyframe
+      navigateToRelativeFrame(frame)
+
+      // Set the opacity value to match this keyframe
+      const newOpacity = keyframe.value * 100
+      updateOpacity(newOpacity)
+    }
+  }
+
+  // Edit a keyframe's value directly
+  const editKeyframeValue = (frame: number, newValue: number) => {
+    const normalizedValue = Math.max(0, Math.min(100, newValue)) / 100
+    updateKeyframeOpacity(frame, normalizedValue * 100)
+  }
+
+  // Jump to next or previous keyframe
+  const navigateToNextKeyframe = () => {
+    if (!useFrameInterpolation || opacityKeyframes.length < 2 || currentFrame === undefined) return
+
+    // Convert current position to relative frame
+    const relativeFrame = currentFrame - localOverlay.from
+
+    // Find the next keyframe after current position
+    const sortedFrames = [...opacityKeyframes].sort((a, b) => a.frame - b.frame)
+    const nextKeyframe = sortedFrames.find((kf) => kf.frame > relativeFrame)
+
+    if (nextKeyframe) {
+      navigateToRelativeFrame(nextKeyframe.frame)
+      setActiveKeyframe(nextKeyframe.frame)
+    }
+  }
+
+  const navigateToPrevKeyframe = () => {
+    if (!useFrameInterpolation || opacityKeyframes.length < 2 || currentFrame === undefined) return
+
+    // Convert current position to relative frame
+    const relativeFrame = currentFrame - localOverlay.from
+
+    // Find the previous keyframe before current position
+    const sortedFrames = [...opacityKeyframes].sort((a, b) => a.frame - b.frame)
+    const prevKeyframes = sortedFrames.filter((kf) => kf.frame < relativeFrame)
+
+    if (prevKeyframes.length > 0) {
+      const prevKeyframe = prevKeyframes[prevKeyframes.length - 1]
+      navigateToRelativeFrame(prevKeyframe.frame)
+      setActiveKeyframe(prevKeyframe.frame)
+    }
+  }
+
+  // Add event listeners for dragging
+  useEffect(() => {
+    if (draggedKeyframeFrame !== null) {
+      window.addEventListener("mousemove", handleKeyframeDrag)
+      window.addEventListener("mouseup", handleKeyframeDragEnd)
+
+      return () => {
+        window.removeEventListener("mousemove", handleKeyframeDrag)
+        window.removeEventListener("mouseup", handleKeyframeDragEnd)
+      }
+    }
+  }, [draggedKeyframeFrame, dragStartX])
+
+  // Add keyboard shortcut handlers
+  useEffect(() => {
+    const handleKeydown = (e: KeyboardEvent) => {
+      // Skip if in an input field
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement ||
+        e.target instanceof HTMLSelectElement
+      ) {
+        return
+      }
+
+      // Determine which property is currently active based on expanded sections
+      let activeProperty = ""
+      if (expanded.opacity && useFrameInterpolation.opacity) activeProperty = "opacity"
+      else if (expanded.scale && useFrameInterpolation.scale) activeProperty = "scale"
+      else if (expanded.rotation && useFrameInterpolation.rotation) activeProperty = "rotation"
+      else if (expanded.position && useFrameInterpolation.position) {
+        // For position, we need to handle both X and Y
+        // Default to X for keyboard shortcuts
+        activeProperty = "positionX"
+      }
+
+      if (activeProperty) {
+        // Next keyframe: Right arrow
+        if (e.key === "ArrowRight" && e.altKey) {
+          e.preventDefault()
+          navigateToNextKeyframeForProperty(activeProperty)
+        }
+
+        // Previous keyframe: Left arrow
+        if (e.key === "ArrowLeft" && e.altKey) {
+          e.preventDefault()
+          navigateToPrevKeyframeForProperty(activeProperty)
+        }
+
+        // Add keyframe: K key
+        if (e.key === "k" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+          e.preventDefault()
+          if (activeProperty === "opacity") addKeyframeAtCurrentFrameForProperty("opacity", opacityValue)
+          else if (activeProperty === "scale") addKeyframeAtCurrentFrameForProperty("scale", scaleValue)
+          else if (activeProperty === "rotation") addKeyframeAtCurrentFrameForProperty("rotation", rotationValue)
+          else if (activeProperty === "positionX") {
+            addKeyframeAtCurrentFrameForProperty("positionX", posX)
+            addKeyframeAtCurrentFrameForProperty("positionY", posY)
+          }
+        }
+
+        // Delete active keyframe: Delete key
+        if ((e.key === "Delete" || e.key === "Backspace") && activeKeyframes[activeProperty] !== null) {
+          e.preventDefault()
+          removeKeyframeForProperty(activeProperty, activeKeyframes[activeProperty]!)
+          setActiveKeyframes((prev) => ({
+            ...prev,
+            [activeProperty]: null,
+          }))
+        }
+      }
+
+      // Toggle curve view: V key
+      if (e.key === "v" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault()
+        toggleCurvePreview()
+      }
+    }
+
+    window.addEventListener("keydown", handleKeydown)
+    return () => {
+      window.removeEventListener("keydown", handleKeydown)
+    }
+  }, [
+    useFrameInterpolation,
+    activeKeyframes,
+    currentFrame,
+    opacityKeyframes,
+    scaleKeyframes,
+    positionXKeyframes,
+    positionYKeyframes,
+    rotationKeyframes,
+    expanded,
+  ])
+
+  // Initialize keyframes on first load or when interpolation is enabled
+  useEffect(() => {
+    if (useFrameInterpolation.opacity && opacityKeyframes.length === 0) {
+      // If overlay has keyframes, use them
+      if (localOverlay.keyframes && localOverlay.keyframes.length >= 2) {
+        setOpacityKeyframes([...localOverlay.keyframes])
+      } else {
+        // Create default keyframes if none exist
+        setOpacityKeyframes([
+          { frame: 0, value: opacityValue, id: generateKeyframeId() }, // First frame
+          { frame: localOverlay.durationInFrames, value: opacityValue, id: generateKeyframeId() }, // Last frame
+        ])
+      }
+    }
+  }, [useFrameInterpolation])
+
+  // Save keyframes to overlay when they change
+  useEffect(() => {
+    if (useFrameInterpolation.opacity && opacityKeyframes.length >= 2) {
+      // Update overlay with keyframes
+      handleStyleChange({
+        keyframes: [...opacityKeyframes],
+      } as any) // Type cast needed due to keyframes being added to styles
+    }
+  }, [opacityKeyframes, useFrameInterpolation])
+
+  // Basic linear interpolation function
+  const interpolate = (frame: number, inputRange: number[], outputRange: number[]) => {
+    if (frame <= inputRange[0]) return outputRange[0]
+    if (frame >= inputRange[inputRange.length - 1]) return outputRange[outputRange.length - 1]
+
+    for (let i = 0; i < inputRange.length - 1; i++) {
+      if (frame >= inputRange[i] && frame <= inputRange[i + 1]) {
+        const t = (frame - inputRange[i]) / (inputRange[i + 1] - inputRange[i])
+        return outputRange[i] + t * (outputRange[i + 1] - outputRange[i])
+      }
+    }
+    return outputRange[0]
+  }
+
+  // Get opacity value at a specific frame by interpolating between keyframes
+  const getInterpolatedOpacity = (frame: number) => {
+    if (!useFrameInterpolation.opacity || opacityKeyframes.length < 2) return opacityValue
+
+    // Sort keyframes by frame number
+    const sortedKeyframes = [...opacityKeyframes].sort((a, b) => a.frame - b.frame)
+
+    // Extract frame numbers and opacity values for interpolation
+    const frames = sortedKeyframes.map((kf) => kf.frame)
+    const values = sortedKeyframes.map((kf) => kf.value)
+
+    // Interpolate based on current frame
+    return interpolate(frame, frames, values)
+  }
+
+  // Generate unique ID for keyframes
+  const generateKeyframeId = () => `kf_${Date.now()}_${Math.floor(Math.random() * 1000)}`
+
+  // Update function to add keyframe with ID
+  const addKeyframeAtCurrentFrame = () => {
+    if (currentFrame === undefined) return
+
+    // Convert global timeline frame to local overlay frame
+    const relativeFrame = currentFrame - localOverlay.from
+
+    // Don't add keyframe if outside overlay bounds
+    if (relativeFrame < 0 || relativeFrame > localOverlay.durationInFrames) return
+
+    // Check if a keyframe already exists at this position
+    const existingKeyframeIndex = opacityKeyframes.findIndex((kf) => kf.frame === relativeFrame)
+
+    if (existingKeyframeIndex >= 0) {
+      // Update existing keyframe
+      const updatedKeyframes = [...opacityKeyframes]
+      updatedKeyframes[existingKeyframeIndex].value = opacityValue
+      setOpacityKeyframes(updatedKeyframes)
+
+      // Notify parent if needed
+      if (onKeyframeChange) {
+        onKeyframeChange(updatedKeyframes)
+      }
+    } else {
+      // Add new keyframe with ID
+      const newKeyframe = {
+        frame: relativeFrame,
+        value: opacityValue,
+        id: generateKeyframeId(),
+      }
+
+      const newKeyframes = [...opacityKeyframes, newKeyframe]
+      setOpacityKeyframes(newKeyframes)
+
+      // Notify parent if needed
+      if (onKeyframeChange) {
+        onKeyframeChange(newKeyframes)
+      }
+    }
+
+    // Apply the current opacity immediately
+    setLastInterpolatedOpacity(opacityValue)
+    handleStyleChange({ opacity: opacityValue })
+  }
+
+  // Update function to update a specific keyframe's opacity
+  const updateKeyframeOpacity = (frame: number, newOpacity: number) => {
+    const keyframeIndex = opacityKeyframes.findIndex((kf) => kf.frame === frame)
+
+    if (keyframeIndex >= 0) {
+      // Convert from percentage (0-100) to decimal (0-1)
+      const normalizedOpacity = newOpacity / 100
+
+      // Update the keyframe
+      const updatedKeyframes = [...opacityKeyframes]
+      updatedKeyframes[keyframeIndex].value = normalizedOpacity
+      setOpacityKeyframes(updatedKeyframes)
+
+      // Apply the change if we're at that keyframe
+      if (currentFrame === frame) {
+        setOpacityValue(normalizedOpacity)
+        setLastInterpolatedOpacity(normalizedOpacity)
+        handleStyleChange({ opacity: normalizedOpacity })
+      } else {
+        // Update the interpolated value at current frame
+        const interpolatedValue = getInterpolatedOpacity(currentFrame || 0)
+        setLastInterpolatedOpacity(interpolatedValue)
+        handleStyleChange({ opacity: interpolatedValue })
+      }
+
+      // Notify parent if needed
+      if (onKeyframeChange) {
+        onKeyframeChange(updatedKeyframes)
+      }
+    }
+  }
+
+  // Remove a keyframe
+  const removeKeyframe = (frame: number) => {
+    // Don't remove if it would leave less than 2 keyframes
+    if (opacityKeyframes.length <= 2) {
+      return
+    }
+
+    const updatedKeyframes = opacityKeyframes.filter((kf) => kf.frame !== frame)
+
+    // Update local state
+    setOpacityKeyframes(updatedKeyframes)
+
+    // Update overlay
+    handleStyleChange({
+      keyframes: [...updatedKeyframes],
+    } as any)
+
+    // Notify parent if needed
+    if (onKeyframeChange) {
+      onKeyframeChange(updatedKeyframes)
+    }
+
+    // If the current frame had a keyframe, update the interpolated opacity
+    if (currentFrame === frame) {
+      const interpolatedValue = getInterpolatedOpacity(currentFrame)
+      setLastInterpolatedOpacity(interpolatedValue)
+      handleStyleChange({ opacity: interpolatedValue })
+    }
+  }
+
+  // Update interpolated opacity when current frame or keyframes change
+  useEffect(() => {
+    // Handle opacity interpolation
+    if (useFrameInterpolation.opacity && currentFrame !== undefined && opacityKeyframes.length >= 2) {
+      const interpolatedValue = getInterpolatedValueForProperty("opacity", currentFrame)
+      if (Math.abs(interpolatedValue - lastInterpolatedValues.opacity) > 0.01) {
+        updateLastInterpolatedValue("opacity", interpolatedValue)
+        handleStyleChange({ opacity: interpolatedValue })
+      }
+    } else if (!useFrameInterpolation.opacity && lastInterpolatedValues.opacity !== opacityValue) {
+      updateLastInterpolatedValue("opacity", opacityValue)
+      handleStyleChange({ opacity: opacityValue })
+    }
+
+    // Handle scale interpolation
+    if (useFrameInterpolation.scale && currentFrame !== undefined && scaleKeyframes.length >= 2) {
+      const interpolatedValue = getInterpolatedValueForProperty("scale", currentFrame)
+      if (Math.abs(interpolatedValue - lastInterpolatedValues.scale) > 0.01) {
+        updateLastInterpolatedValue("scale", interpolatedValue)
+        handleStyleChange({ transform: `scale(${interpolatedValue})` })
+      }
+    } else if (!useFrameInterpolation.scale && lastInterpolatedValues.scale !== scaleValue) {
+      updateLastInterpolatedValue("scale", scaleValue)
+      handleStyleChange({ transform: `scale(${scaleValue})` })
+    }
+
+    // Handle position X interpolation
+    if (useFrameInterpolation.position && currentFrame !== undefined && positionXKeyframes.length >= 2) {
+      const interpolatedValue = getInterpolatedValueForProperty("positionX", currentFrame)
+      if (Math.abs(interpolatedValue - lastInterpolatedValues.positionX) > 0.5) {
+        updateLastInterpolatedValue("positionX", interpolatedValue)
+        handlePositionChange({ left: interpolatedValue })
+      }
+    } else if (!useFrameInterpolation.position && lastInterpolatedValues.positionX !== posX) {
+      updateLastInterpolatedValue("positionX", posX)
+      handlePositionChange({ left: posX })
+    }
+
+    // Handle position Y interpolation
+    if (useFrameInterpolation.position && currentFrame !== undefined && positionYKeyframes.length >= 2) {
+      const interpolatedValue = getInterpolatedValueForProperty("positionY", currentFrame)
+      if (Math.abs(interpolatedValue - lastInterpolatedValues.positionY) > 0.5) {
+        updateLastInterpolatedValue("positionY", interpolatedValue)
+        handlePositionChange({ top: interpolatedValue })
+      }
+    } else if (!useFrameInterpolation.position && lastInterpolatedValues.positionY !== posY) {
+      updateLastInterpolatedValue("positionY", posY)
+      handlePositionChange({ top: posY })
+    }
+
+    // Handle rotation interpolation
+    if (useFrameInterpolation.rotation && currentFrame !== undefined && rotationKeyframes.length >= 2) {
+      const interpolatedValue = getInterpolatedValueForProperty("rotation", currentFrame)
+      if (Math.abs(interpolatedValue - lastInterpolatedValues.rotation) > 0.5) {
+        updateLastInterpolatedValue("rotation", interpolatedValue)
+        handlePositionChange({ rotation: interpolatedValue })
+      }
+    } else if (!useFrameInterpolation.rotation && lastInterpolatedValues.rotation !== rotationValue) {
+      updateLastInterpolatedValue("rotation", rotationValue)
+      handlePositionChange({ rotation: rotationValue })
+    }
+  }, [
+    currentFrame,
+    useFrameInterpolation,
+    opacityKeyframes,
+    scaleKeyframes,
+    positionXKeyframes,
+    positionYKeyframes,
+    rotationKeyframes,
+    opacityValue,
+    scaleValue,
+    posX,
+    posY,
+    rotationValue,
+  ])
+
+  // Sync with overlay on change
+  useEffect(() => {
+    setPosX(localOverlay.left)
+    setPosY(localOverlay.top)
+    setRotationValue(localOverlay.rotation || 0)
+
+    // Only update opacity value from localOverlay if not using frame interpolation
+    if (!useFrameInterpolation.opacity) {
+      setOpacityValue(localOverlay.styles.opacity ?? 1)
+    }
+
+    // Extract only the scale from transform
+    const match = localOverlay.styles.transform?.match(/scale$$([^)]+)$$/)
+    setScaleValue(match ? Number(match[1]) : 1)
+  }, [localOverlay, useFrameInterpolation])
+
+  // Ensure rotation and transform stay in sync
+  useEffect(() => {
+    // When rotation changes, make sure transform only contains scale
+    const currentScale = scaleValue
+
+    // Only update if transform contains rotation or is in wrong format
+    const currentTransform = localOverlay.styles.transform || ""
+    if (currentTransform.includes("rotate") || !currentTransform.includes("scale")) {
+      handleStyleChange({
+        transform: `scale(${currentScale})`,
+      })
+    }
+  }, [localOverlay.rotation, scaleValue, handleStyleChange])
+
+  // When frame interpolation is toggled on/off, update opacity accordingly
+  useEffect(() => {
+    if (useFrameInterpolation.opacity && currentFrame !== undefined) {
+      // When turning on, immediately apply the interpolated value
+      const interpolatedValue = getInterpolatedOpacity(currentFrame)
+      setLastInterpolatedOpacity(interpolatedValue)
+      handleStyleChange({ opacity: interpolatedValue })
+    } else if (!useFrameInterpolation.opacity) {
+      // When turning off, reset to the base opacity
+      setLastInterpolatedOpacity(opacityValue)
+      handleStyleChange({ opacity: opacityValue })
+    }
+  }, [useFrameInterpolation])
+
+  // Handlers: update only relevant property
+  const updatePosition = (x?: number, y?: number) => {
+    if (x !== undefined) {
+      setPosX(x)
+
+      if (!useFrameInterpolation.position) {
+        handlePositionChange({ left: x })
+      } else if (currentFrame !== undefined) {
+        // If at a keyframe position, update that keyframe
+        const keyframeIndex = positionXKeyframes.findIndex((kf) => kf.frame === currentFrame - localOverlay.from)
+        if (keyframeIndex >= 0) {
+          // Update the keyframe
+          const updatedKeyframes = [...positionXKeyframes]
+          updatedKeyframes[keyframeIndex].value = x
+          setPositionXKeyframes(updatedKeyframes)
+        }
+      }
+    }
+
+    if (y !== undefined) {
+      setPosY(y)
+
+      if (!useFrameInterpolation.position) {
+        handlePositionChange({ top: y })
+      } else if (currentFrame !== undefined) {
+        // If at a keyframe position, update that keyframe
+        const keyframeIndex = positionYKeyframes.findIndex((kf) => kf.frame === currentFrame - localOverlay.from)
+        if (keyframeIndex >= 0) {
+          // Update the keyframe
+          const updatedKeyframes = [...positionYKeyframes]
+          updatedKeyframes[keyframeIndex].value = y
+          setPositionYKeyframes(updatedKeyframes)
+        }
+      }
+    }
+  }
+
+  const updateScale = (percent: number) => {
+    const s = percent / 100
+    setScaleValue(s)
+
+    if (!useFrameInterpolation.scale) {
+      // Ensure we're only updating scale in transform, not affecting rotation
+      handleStyleChange({ transform: `scale(${s})` })
+    } else if (currentFrame !== undefined) {
+      // If at a keyframe position, update that keyframe
+      const keyframeIndex = scaleKeyframes.findIndex((kf) => kf.frame === currentFrame - localOverlay.from)
+      if (keyframeIndex >= 0) {
+        // Update the keyframe
+        const updatedKeyframes = [...scaleKeyframes]
+        updatedKeyframes[keyframeIndex].value = s
+        setScaleKeyframes(updatedKeyframes)
+      }
+    }
+  }
+
+  const updateRotation = (deg: number) => {
+    setRotationValue(deg)
+
+    if (!useFrameInterpolation.rotation) {
+      // Only update the rotation property, keeping it separate from transform
+      handlePositionChange({ rotation: deg })
+    } else if (currentFrame !== undefined) {
+      // If at a keyframe position, update that keyframe
+      const keyframeIndex = rotationKeyframes.findIndex((kf) => kf.frame === currentFrame - localOverlay.from)
+      if (keyframeIndex >= 0) {
+        // Update the keyframe
+        const updatedKeyframes = [...rotationKeyframes]
+        updatedKeyframes[keyframeIndex].value = deg
+        setRotationKeyframes(updatedKeyframes)
+      }
+    }
+  }
+
+  const updateOpacity = (percent: number) => {
+    const o = percent / 100
+    setOpacityValue(o)
+
+    // If frame interpolation is off, apply opacity directly
+    if (!useFrameInterpolation.opacity) {
+      setLastInterpolatedOpacity(o)
+      handleStyleChange({ opacity: o })
+    } else if (currentFrame !== undefined) {
+      // If at a keyframe position, update that keyframe
+      const keyframeIndex = opacityKeyframes.findIndex((kf) => kf.frame === currentFrame)
+      if (keyframeIndex >= 0) {
+        // Update the keyframe and apply the change
+        const updatedKeyframes = [...opacityKeyframes]
+        updatedKeyframes[keyframeIndex].value = o
+        setOpacityKeyframes(updatedKeyframes)
+      }
+
+      // Apply the interpolated opacity value
+      const interpolatedValue = getInterpolatedOpacity(currentFrame)
+      setLastInterpolatedOpacity(interpolatedValue)
+      handleStyleChange({ opacity: interpolatedValue })
+    }
+  }
+
+  const reset = {
+    position: () => updatePosition(0, 0),
+    scale: () => updateScale(100),
+    rotation: () => updateRotation(0),
+    opacity: () => updateOpacity(100),
+  }
+
+  // Visualize the opacity curve for the preview
+  const generateOpacityPreview = () => {
+    if (!totalFrames) return []
+
+    const frames = 50 // Number of preview frames
+    const preview = []
+
+    for (let i = 0; i < frames; i++) {
+      const frame = Math.floor((i / frames) * totalFrames)
+      const opacity = useFrameInterpolation.opacity ? getInterpolatedOpacity(frame) : opacityValue
+
+      preview.push({
+        frame,
+        opacity,
+        isCurrent: frame === currentFrame,
+      })
+    }
+
+    return preview
+  }
+
+  // Check if current frame has a keyframe
+  const hasKeyframeAtCurrentFrame =
+    currentFrame !== undefined && opacityKeyframes.some((kf) => kf.frame === currentFrame - localOverlay.from)
+
+  // Timeline scrubbing state
+  const [scrubPosition, setScrubPosition] = useState<number | null>(null)
+
+  // Frame navigation function
+  const navigateToRelativeFrame = (frameOffset: number) => {
+    // Calculate the new position in global timeline coordinates
+    const targetFrame = localOverlay.from + frameOffset
+
+    // This would typically update the global timeline position
+    console.log(`Navigate to frame: ${targetFrame} (${frameOffset} in clip)`)
+
+    // For demo purposes, we can just log this
+    // In a real implementation, this would update the player's current frame
+  }
+
+  // Navigate to next/previous frame
+  const goToPreviousFrame = () => {
+    if (currentFrame > localOverlay.from) {
+      navigateToRelativeFrame(Math.max(0, currentFrame - localOverlay.from - 1))
+    }
+  }
+
+  const goToNextFrame = () => {
+    if (currentFrame < localOverlay.from + localOverlay.durationInFrames - 1) {
+      navigateToRelativeFrame(Math.min(localOverlay.durationInFrames - 1, currentFrame - localOverlay.from + 1))
+    }
+  }
+
+  // Enhanced handleTimelineHover to include drag interaction
+  const handleTimelineHover = (e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const hoverPos = (e.clientX - rect.left) / rect.width
+    const hoverFrame = Math.round(hoverPos * localOverlay.durationInFrames)
+    setScrubPosition(hoverFrame)
+  }
+
+  // Find the closest keyframe to a given frame
+  const findClosestKeyframe = (frame: number) => {
+    if (!useFrameInterpolation || opacityKeyframes.length < 2) return null
+
+    // Convert to relative frame position
+    const relativeFrame = frame
+
+    // Find nearest keyframe
+    let closestKeyframe = null
+    let minDistance = Number.MAX_VALUE
+
+    for (const keyframe of opacityKeyframes) {
+      const distance = Math.abs(keyframe.frame - relativeFrame)
+      if (distance < minDistance) {
+        minDistance = distance
+        closestKeyframe = keyframe
+      }
+    }
+
+    return closestKeyframe
+  }
+
+  // Snap to the closest keyframe when holding Alt key while clicking timeline
+  const handleTimelineClickWithSnap = (e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const clickPos = (e.clientX - rect.left) / rect.width
+    const frameOffset = Math.round(clickPos * localOverlay.durationInFrames)
+
+    // Check if Alt key is pressed for snapping to keyframes
+    if (e.altKey && useFrameInterpolation.opacity) {
+      const closestKeyframe = findClosestKeyframe(frameOffset)
+      if (closestKeyframe) {
+        // Navigate to the closest keyframe
+        navigateToRelativeFrame(closestKeyframe.frame)
+        setActiveKeyframe(closestKeyframe.frame)
+        return
+      }
+    }
+
+    // Normal timeline navigation
+    navigateToRelativeFrame(frameOffset)
+  }
+
+  // Start dragging timeline scrubber
+  const handleTimelineScrubStart = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setTimelineDragActive(true)
+
+    const rect = e.currentTarget.getBoundingClientRect()
+    const clickPos = (e.clientX - rect.left) / rect.width
+    const frameOffset = Math.round(clickPos * localOverlay.durationInFrames)
+
+    // Set the scrub position
+    setScrubPosition(frameOffset)
+
+    // Add event listeners for drag
+    window.addEventListener("mousemove", handleTimelineScrubMove)
+    window.addEventListener("mouseup", handleTimelineScrubEnd)
+  }
+
+  // Handle timeline scrubber dragging
+  const handleTimelineScrubMove = (e: MouseEvent) => {
+    if (!timelineDragActive) return
+
+    // Find timeline element
+    const timelineEl = document.querySelector(".keyframe-timeline")
+    if (!timelineEl) return
+
+    const rect = timelineEl.getBoundingClientRect()
+    const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+    const frameOffset = Math.round(pos * localOverlay.durationInFrames)
+
+    // Update scrub position
+    setScrubPosition(frameOffset)
+
+    // Navigate to this frame (this would update the player position)
+    navigateToRelativeFrame(frameOffset)
+  }
+
+  // End timeline scrubber dragging
+  const handleTimelineScrubEnd = () => {
+    setTimelineDragActive(false)
+
+    // Remove event listeners
+    window.removeEventListener("mousemove", handleTimelineScrubMove)
+    window.removeEventListener("mouseup", handleTimelineScrubEnd)
+  }
+
+  // Generate points for opacity curve visualization
+  const generateCurvePoints = () => {
+    if (!useFrameInterpolation.opacity || opacityKeyframes.length < 2) return ""
+
+    // Generate more points for smoother curve representation
+    const numPoints = 100
+    const points = []
+
+    for (let i = 0; i < numPoints; i++) {
+      const frame = (i / (numPoints - 1)) * localOverlay.durationInFrames
+      const opacity = getInterpolatedOpacity(frame)
+
+      // Convert to SVG coordinate space
+      // x: 0 to 100% of width
+      // y: 0% opacity at bottom, 100% at top (inverted for SVG coordinates)
+      const x = (frame / localOverlay.durationInFrames) * 100
+      const y = 100 - opacity * 100 // Invert for SVG coordinates
+
+      points.push(`${x},${y}`)
+    }
+
+    return points.join(" ")
+  }
+
+  // Toggle curve preview visibility
+  const toggleCurvePreview = () => {
+    setShowCurvePreview((prev) => !prev)
+  }
+
+  // Sort keyframes for display
+  const sortedKeyframes = [...opacityKeyframes].sort((a, b) => a.frame - b.frame)
+
+  const addKeyframeAtCurrentTime = () => {
+    addKeyframeAtCurrentFrame()
+  }
+
+  // Add a helper function to get keyframes for a specific property
+  const getKeyframesForProperty = (property: string) => {
+    switch (property) {
+      case "opacity":
+        return opacityKeyframes.map((kf) => ({ ...kf, property: "opacity" })) as TransformKeyframe[]
+      case "scale":
+        return scaleKeyframes
+      case "positionX":
+        return positionXKeyframes
+      case "positionY":
+        return positionYKeyframes
+      case "rotation":
+        return rotationKeyframes
+      default:
+        return []
+    }
+  }
+
+  // Add a helper function to update keyframes for a specific property
+  const updateKeyframesForProperty = (property: string, keyframes: TransformKeyframe[]) => {
+    switch (property) {
+      case "opacity":
+        setOpacityKeyframes(keyframes.map((kf) => ({ frame: kf.frame, value: kf.value, id: kf.id })))
+        break
+      case "scale":
+        setScaleKeyframes(keyframes)
+        break
+      case "positionX":
+        setPositionXKeyframes(keyframes)
+        break
+      case "positionY":
+        setPositionYKeyframes(keyframes)
+        break
+      case "rotation":
+        setRotationKeyframes(keyframes)
+        break
+    }
+  }
+
+  // Create a generic function to add a keyframe for any property
+  const addKeyframeAtCurrentFrameForProperty = (property: string, value: number) => {
+    if (currentFrame === undefined) return
+
+    // Convert global timeline frame to local overlay frame
+    const relativeFrame = currentFrame - localOverlay.from
+
+    // Don't add keyframe if outside overlay bounds
+    if (relativeFrame < 0 || relativeFrame > localOverlay.durationInFrames) return
+
+    const keyframes = getKeyframesForProperty(property)
+
+    // Check if a keyframe already exists at this position
+    const existingKeyframeIndex = keyframes.findIndex((kf) => kf.frame === relativeFrame)
+
+    if (existingKeyframeIndex >= 0) {
+      // Update existing keyframe
+      const updatedKeyframes = [...keyframes]
+      updatedKeyframes[existingKeyframeIndex].value = value
+      updateKeyframesForProperty(property, updatedKeyframes)
+
+      // Notify parent if needed
+      if (onKeyframeChange) {
+        onKeyframeChange(getAllKeyframes())
+      }
+    } else {
+      // Add new keyframe with ID
+      const newKeyframe: TransformKeyframe = {
+        frame: relativeFrame,
+        property: property as any,
+        value: value,
+        id: generateKeyframeId(),
+      }
+
+      const newKeyframes = [...keyframes, newKeyframe]
+      updateKeyframesForProperty(property, newKeyframes)
+
+      // Notify parent if needed
+      if (onKeyframeChange) {
+        onKeyframeChange(getAllKeyframes())
+      }
+    }
+
+    // Apply the current value immediately
+    updateLastInterpolatedValue(property, value)
+    applyValueToProperty(property, value)
+  }
+
+  // Helper to get all keyframes across all properties
+  const getAllKeyframes = () => {
+    return [
+      ...(opacityKeyframes.map((kf) => ({ ...kf, property: "opacity" })) as TransformKeyframe[]),
+      ...scaleKeyframes,
+      ...positionXKeyframes,
+      ...positionYKeyframes,
+      ...rotationKeyframes,
+    ]
+  }
+
+  // Helper to update the last interpolated value
+  const updateLastInterpolatedValue = (property: string, value: number) => {
+    setLastInterpolatedValues((prev) => ({
+      ...prev,
+      [property]: value,
+    }))
+  }
+
+  // Helper to apply a value to the appropriate property
+  const applyValueToProperty = (property: string, value: number) => {
+    switch (property) {
+      case "opacity":
+        handleStyleChange({ opacity: value })
+        break
+      case "scale":
+        handleStyleChange({ transform: `scale(${value})` })
+        break
+      case "positionX":
+        handlePositionChange({ left: value })
+        break
+      case "positionY":
+        handlePositionChange({ top: value })
+        break
+      case "rotation":
+        handlePositionChange({ rotation: value })
+        break
+    }
+  }
+
+  // Generic function to get interpolated value for any property
+  const getInterpolatedValueForProperty = (property: string, frame: number) => {
+    const keyframes = getKeyframesForProperty(property)
+
+    if (
+      !useFrameInterpolation[
+        property === "positionX" || property === "positionY" ? "position" : (property as SectionKey)
+      ] ||
+      keyframes.length < 2
+    ) {
+      // Return the current value if not using interpolation
+      switch (property) {
+        case "opacity":
+          return opacityValue
+        case "scale":
+          return scaleValue
+        case "positionX":
+          return posX
+        case "positionY":
+          return posY
+        case "rotation":
+          return rotationValue
+        default:
+          return 0
+      }
+    }
+
+    // Sort keyframes by frame number
+    const sortedKeyframes = [...keyframes].sort((a, b) => a.frame - b.frame)
+
+    // Extract frame numbers and values for interpolation
+    const frames = sortedKeyframes.map((kf) => kf.frame)
+    const values = sortedKeyframes.map((kf) => kf.value)
+
+    // Interpolate based on current frame
+    return interpolate(frame, frames, values)
+  }
+
+  // Update the toggleFrameInterpolation function to work with any property
+  const toggleFrameInterpolationForProperty = (property: SectionKey) => {
+    const newState = !useFrameInterpolation[property]
+
+    setUseFrameInterpolation((prev) => ({
+      ...prev,
+      [property]: newState,
+    }))
+
+    // Initialize keyframes if turning on interpolation
+    if (newState) {
+      // For position, we need to initialize both X and Y
+      if (property === "position") {
+        if (positionXKeyframes.length === 0) {
+          setPositionXKeyframes([
+            { frame: 0, property: "positionX", value: posX, id: generateKeyframeId() },
+            { frame: localOverlay.durationInFrames, property: "positionX", value: posX, id: generateKeyframeId() },
+          ])
+        }
+
+        if (positionYKeyframes.length === 0) {
+          setPositionYKeyframes([
+            { frame: 0, property: "positionY", value: posY, id: generateKeyframeId() },
+            { frame: localOverlay.durationInFrames, property: "positionY", value: posY, id: generateKeyframeId() },
+          ])
+        }
+      }
+      // For other properties
+      else {
+        const keyframes = getKeyframesForProperty(
+          property === "scale" ? "scale" : property === "rotation" ? "rotation" : "opacity",
+        )
+
+        if (keyframes.length === 0) {
+          const initialValue =
+            property === "scale" ? scaleValue : property === "rotation" ? rotationValue : opacityValue
+
+          const newKeyframes: TransformKeyframe[] = [
+            {
+              frame: 0,
+              property: (property === "scale" 
+                        ? "scale" 
+                        : property === "rotation" 
+                          ? "rotation" 
+                          : "opacity") as "opacity" | "scale" | "positionX" | "positionY" | "rotation",
+              value: initialValue,
+              id: generateKeyframeId(),
+            },
+            {
+              frame: localOverlay.durationInFrames,
+              property: (property === "scale" 
+                        ? "scale" 
+                        : property === "rotation" 
+                          ? "rotation" 
+                          : "opacity") as "opacity" | "scale" | "positionX" | "positionY" | "rotation",
+              value: initialValue,
+              id: generateKeyframeId(),
+            },
+          ]
+
+          updateKeyframesForProperty(
+            (property === "scale" ? "scale" : property === "rotation" ? "rotation" : "opacity") as "opacity" | "scale" | "positionX" | "positionY" | "rotation",
+            newKeyframes,
+          )
+        }
+      }
+    }
+  }
+
+  // Update the keyframe navigation functions to work with any property
+  const navigateToNextKeyframeForProperty = (property: string) => {
+    if (
+      !useFrameInterpolation[
+        property === "positionX" || property === "positionY" ? "position" : (property as SectionKey)
+      ]
+    )
+      return
+
+    const keyframes = getKeyframesForProperty(property)
+    if (keyframes.length < 2 || currentFrame === undefined) return
+
+    // Convert current position to relative frame
+    const relativeFrame = currentFrame - localOverlay.from
+
+    // Find the next keyframe after current position
+    const sortedFrames = [...keyframes].sort((a, b) => a.frame - b.frame)
+    const nextKeyframe = sortedFrames.find((kf) => kf.frame > relativeFrame)
+
+    if (nextKeyframe) {
+      navigateToRelativeFrame(nextKeyframe.frame)
+      setActiveKeyframes((prev) => ({
+        ...prev,
+        [property]: nextKeyframe.frame,
+      }))
+    }
+  }
+
+  const navigateToPrevKeyframeForProperty = (property: string) => {
+    if (
+      !useFrameInterpolation[
+        property === "positionX" || property === "positionY" ? "position" : (property as SectionKey)
+      ]
+    )
+      return
+
+    const keyframes = getKeyframesForProperty(property)
+    if (keyframes.length < 2 || currentFrame === undefined) return
+
+    // Convert current position to relative frame
+    const relativeFrame = currentFrame - localOverlay.from
+
+    // Find the previous keyframe before current position
+    const sortedFrames = [...keyframes].sort((a, b) => a.frame - b.frame)
+    const prevKeyframes = sortedFrames.filter((kf) => kf.frame < relativeFrame)
+
+    if (prevKeyframes.length > 0) {
+      const prevKeyframe = prevKeyframes[prevKeyframes.length - 1]
+      navigateToRelativeFrame(prevKeyframe.frame)
+      setActiveKeyframes((prev) => ({
+        ...prev,
+        [property]: prevKeyframe.frame,
+      }))
+    }
+  }
+
+  // Update the removeKeyframe function to work with any property
+  const removeKeyframeForProperty = (property: string, frame: number) => {
+    const keyframes = getKeyframesForProperty(property)
+
+    // Don't remove if it would leave less than 2 keyframes
+    if (keyframes.length <= 2) {
+      return
+    }
+
+    const updatedKeyframes = keyframes.filter((kf) => kf.frame !== frame)
+
+    // Update local state
+    updateKeyframesForProperty(property, updatedKeyframes)
+
+    // Update overlay
+    if (property === "opacity") {
+      handleStyleChange({
+        keyframes: [...updatedKeyframes],
+      } as any)
+    }
+
+    // Notify parent if needed
+    if (onKeyframeChange) {
+      onKeyframeChange(getAllKeyframes())
+    }
+
+    // If the current frame had a keyframe, update the interpolated value
+    if (currentFrame === frame) {
+      const interpolatedValue = getInterpolatedValueForProperty(property, currentFrame)
+      updateLastInterpolatedValue(property, interpolatedValue)
+      applyValueToProperty(property, interpolatedValue)
+    }
+  }
+
+  // Update the position section
+  return (
+    <TooltipProvider delayDuration={300}>
+      <div className="space-y-2 max-h-[calc(100vh-220px)] overflow-y-auto pr-2">
+        {/* Position */}
+        <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-black shadow-sm overflow-hidden">
+          <div 
+            className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-900 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800/70 transition-colors"
+            onClick={() => setExpanded((e) => ({ ...e, position: !e.position }))}
+          >
+          <div className="flex items-center gap-1.5 text-xs font-medium">
+            {expanded.position ? <ChevronDown size={14} className="text-gray-500" /> : <ChevronRight size={14} />}
+            <div className="flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-800">
+              <MoveHorizontal size={10} className="text-gray-700 dark:text-gray-300" />
+            </div>
+            <span>Position</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="text-[10px] font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded min-w-[50px] text-center">
+              {posX.toFixed(0)}, {posY.toFixed(0)}
+              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                  className="h-6 w-6 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                    reset.position()
+                    }}
+                  >
+                  <RotateCcw size={12} />
+                  </Button>
+                </TooltipTrigger>
+              <TooltipContent side="left">Reset position</TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+        {expanded.position && (
+          <div className="p-3 space-y-3 border-t border-gray-200 dark:border-gray-800">
+            {/* X */}
+            <div>
+              <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+                <span className="flex items-center gap-1">
+                  <MoveHorizontal size={12} /> X Position
+                </span>
+                <span className="text-[10px] font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
+                  {posX.toFixed(0)}
+                  </span>
+                </div>
+              <div className="flex items-center gap-1.5">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                      className="h-6 w-6 bg-white dark:bg-gray-900"
+                      onClick={() => updatePosition(posX - 10)}
+                  >
+                      <ArrowLeft size={12} />
+                  </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Move left</TooltipContent>
+                </Tooltip>
+                  <Slider
+                  value={[posX]}
+                    min={-10000}
+                    max={10000}
+                    step={10}
+                  onValueChange={(v) => updatePosition(v[0])}
+                    className="flex-1"
+                  />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                      className="h-6 w-6 bg-white dark:bg-gray-900"
+                      onClick={() => updatePosition(posX + 10)}
+                  >
+                      <ArrowRight size={12} />
+                  </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Move right</TooltipContent>
+                </Tooltip>
+                </div>
+              </div>
+            {/* Y */}
+            <div>
+              <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+                <span className="flex items-center gap-1">
+                  <MoveVertical size={12} /> Y Position
+                </span>
+                <span className="text-[10px] font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
+                  {posY.toFixed(0)}
+                  </span>
+                </div>
+              <div className="flex items-center gap-1.5">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                      className="h-6 w-6 bg-white dark:bg-gray-900"
+                      onClick={() => updatePosition(undefined, posY - 10)}
+                  >
+                      <ArrowUp size={12} />
+                  </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Move up</TooltipContent>
+                </Tooltip>
+                  <Slider
+                  value={[posY]}
+                    min={-10000}
+                    max={10000}
+                    step={10}
+                  onValueChange={(v) => updatePosition(undefined, v[0])}
+                    className="flex-1"
+                  />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                      className="h-6 w-6 bg-white dark:bg-gray-900"
+                      onClick={() => updatePosition(undefined, posY + 10)}
+                  >
+                      <ArrowDown size={12} />
+                  </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Move down</TooltipContent>
+                </Tooltip>
+                </div>
+              </div>
+            </div>
+            {totalFrames > 0 && (
+              <>
+                <Separator className="my-2" />
+                
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium">Keyframe Animation</span>
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                      Animate position over time
+                    </span>
+                  </div>
+                  <Button
+                    variant={useFrameInterpolation.position ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => toggleFrameInterpolationForProperty("position")}
+                    className="gap-1 h-7 text-xs"
+                  >
+                    {useFrameInterpolation.position ? (
+                      <>
+                        <Clock size={12} className="text-white" /> Enabled
+                      </>
+                    ) : (
+                      <>
+                        <Clock size={12} /> Enable
+                      </>
+                    )}
+                  </Button>
+                </div>
+                
+                {useFrameInterpolation.position && (
+                  <>
+                    <Separator className="my-2" />
+                    
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium">Position Keyframes</span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-1.5 text-[10px] flex gap-1 items-center"
+                        onClick={() => {
+                          addKeyframeAtCurrentFrameForProperty("positionX", posX);
+                          addKeyframeAtCurrentFrameForProperty("positionY", posY);
+                        }}
+                      >
+                        <Plus className="h-2.5 w-2.5" /> Add Keyframe
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          )}
+        </div>
+
+      {/* Scale */}
+      <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-black shadow-sm overflow-hidden">
+        <div 
+          className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-900 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800/70 transition-colors"
+          onClick={() => setExpanded((e) => ({ ...e, scale: !e.scale }))}
+        >
+          <div className="flex items-center gap-1.5 text-xs font-medium">
+            {expanded.scale ? <ChevronDown size={14} className="text-gray-500" /> : <ChevronRight size={14} />}
+            <div className="flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-800">
+              <Maximize2 size={10} className="text-gray-700 dark:text-gray-300" />
+            </div>
+            <span>Scale</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="text-[10px] font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded min-w-[50px] text-center">
+              {(scaleValue * 100).toFixed(0)}%
+              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                  className="h-6 w-6 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                    reset.scale()
+                    }}
+                  >
+                  <RotateCcw size={12} />
+                  </Button>
+                </TooltipTrigger>
+              <TooltipContent side="left">Reset scale</TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+        {expanded.scale && (
+          <div className="p-3 space-y-3 border-t border-gray-200 dark:border-gray-800">
+            <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+              <span>Scale Factor</span>
+              <span className="text-[10px] font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
+                {(scaleValue * 100).toFixed(0)}%
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                    className="h-6 w-6 bg-white dark:bg-gray-900"
+                    onClick={() => updateScale(Math.max(1, scaleValue * 100 - 5))}
+                >
+                    <Minus size={12} />
+                </Button>
+                </TooltipTrigger>
+                <TooltipContent>Decrease scale</TooltipContent>
+              </Tooltip>
+                <Slider
+                value={[scaleValue * 100]}
+                  min={1}
+                max={500}
+                step={1}
+                onValueChange={(v) => updateScale(v[0])}
+                  className="flex-1"
+                />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                    className="h-6 w-6 bg-white dark:bg-gray-900"
+                    onClick={() => updateScale(scaleValue * 100 + 5)}
+                >
+                    <Plus size={12} />
+                </Button>
+                </TooltipTrigger>
+                <TooltipContent>Increase scale</TooltipContent>
+              </Tooltip>
+              </div>
+            <Separator className="my-2" />
+            <div className="flex justify-between gap-1.5">
+              {[50, 100, 200].map((p) => (
+                <Tooltip key={p}>
+                  <TooltipTrigger asChild>
+                <Button
+                      variant={Math.abs(scaleValue * 100 - p) < 1 ? "default" : "outline"} 
+                      className={cn(
+                        "flex-1 bg-white dark:bg-gray-900 text-xs h-7",
+                        Math.abs(scaleValue * 100 - p) < 1 && "bg-gray-800 text-white hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
+                      )}
+                      onClick={() => updateScale(p)}
+                    >
+                      {p}%
+                </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{p === 100 ? "Original size" : `Scale to ${p}%`}</TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+            {totalFrames > 0 && (
+              <>
+                <Separator className="my-2" />
+                
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium">Keyframe Animation</span>
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                      Animate scale over time
+                    </span>
+                  </div>
+                  <Button
+                    variant={useFrameInterpolation.scale ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => toggleFrameInterpolationForProperty("scale")}
+                    className="gap-1 h-7 text-xs"
+                  >
+                    {useFrameInterpolation.scale ? (
+                      <>
+                        <Clock size={12} className="text-white" /> Enabled
+                      </>
+                    ) : (
+                      <>
+                        <Clock size={12} /> Enable
+                      </>
+                    )}
+                  </Button>
+                </div>
+                
+                {useFrameInterpolation.scale && (
+                  <>
+                    <Separator className="my-2" />
+                    
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium">Scale Keyframes</span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-1.5 text-[10px] flex gap-1 items-center"
+                        onClick={() => addKeyframeAtCurrentFrameForProperty("scale", scaleValue)}
+                      >
+                        <Plus className="h-2.5 w-2.5" /> Add Keyframe
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Rotation */}
+      <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-black shadow-sm overflow-hidden">
+        <div 
+          className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-900 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800/70 transition-colors"
+          onClick={() => setExpanded((e) => ({ ...e, rotation: !e.rotation }))}
+        >
+          <div className="flex items-center gap-1.5 text-xs font-medium">
+            {expanded.rotation ? <ChevronDown size={14} className="text-gray-500" /> : <ChevronRight size={14} />}
+            <div className="flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-800">
+              <RotateCw size={10} className="text-gray-700 dark:text-gray-300" />
+            </div>
+            <span>Rotation</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="text-[10px] font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded min-w-[50px] text-center">
+              {rotationValue.toFixed(0)}°
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    reset.rotation()
+                  }}
+                >
+                  <RotateCcw size={12} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left">Reset rotation</TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+        {expanded.rotation && (
+          <div className="p-3 space-y-3 border-t border-gray-200 dark:border-gray-800">
+            <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+              <span>Angle</span>
+              <span className="text-[10px] font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
+                {rotationValue.toFixed(0)}°
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                    className="h-6 w-6 bg-white dark:bg-gray-900"
+                    onClick={() => updateRotation((rotationValue - 15 + 360) % 360)}
+                >
+                    <RotateCcw size={12} />
+                </Button>
+                </TooltipTrigger>
+                <TooltipContent>Rotate counterclockwise</TooltipContent>
+              </Tooltip>
+              <Slider
+                value={[rotationValue]}
+                min={0}
+                max={359}
+                step={1}
+                onValueChange={(v) => updateRotation(v[0])}
+                className="flex-1"
+              />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                    className="h-6 w-6 bg-white dark:bg-gray-900"
+                    onClick={() => updateRotation((rotationValue + 15) % 360)}
+                >
+                    <RotateCw size={12} />
+                </Button>
+                </TooltipTrigger>
+                <TooltipContent>Rotate clockwise</TooltipContent>
+              </Tooltip>
+            </div>
+            <Separator className="my-2" />
+            <div className="grid grid-cols-4 gap-1.5">
+              {[0, 90, 180, 270].map((deg) => (
+                <Tooltip key={deg}>
+                  <TooltipTrigger asChild>
+                    <Button 
+                      variant={Math.abs(rotationValue - deg) < 1 ? "default" : "outline"} 
+                      className={cn(
+                        "bg-white dark:bg-gray-900 text-xs h-7",
+                        Math.abs(rotationValue - deg) < 1 && "bg-gray-800 text-white hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
+                      )}
+                      onClick={() => updateRotation(deg)}
+                    >
+                      {deg}°
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Rotate to {deg}°</TooltipContent>
+                </Tooltip>
+              ))}
+              </div>
+              {totalFrames > 0 && (
+                <>
+                  <Separator className="my-2" />
+                  
+                  <div className="flex items-center justify-between">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-medium">Keyframe Animation</span>
+                      <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                        Animate rotation over time
+                      </span>
+                    </div>
+                    <Button
+                      variant={useFrameInterpolation.rotation ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => toggleFrameInterpolationForProperty("rotation")}
+                      className="gap-1 h-7 text-xs"
+                    >
+                      {useFrameInterpolation.rotation ? (
+                        <>
+                          <Clock size={12} className="text-white" /> Enabled
+                        </>
+                      ) : (
+                        <>
+                          <Clock size={12} /> Enable
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                  
+                  {useFrameInterpolation.rotation && (
+                    <>
+                      <Separator className="my-2" />
+                      
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-medium">Rotation Keyframes</span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-6 px-1.5 text-[10px] flex gap-1 items-center"
+                          onClick={() => addKeyframeAtCurrentFrameForProperty("rotation", rotationValue)}
+                        >
+                          <Plus className="h-2.5 w-2.5" /> Add Keyframe
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Opacity */}
+      <div className="rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-black shadow-sm overflow-hidden">
+        <div 
+          className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-900 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800/70 transition-colors"
+          onClick={() => setExpanded((e) => ({ ...e, opacity: !e.opacity }))}
+        >
+          <div className="flex items-center gap-1.5 text-xs font-medium">
+            {expanded.opacity ? <ChevronDown size={14} className="text-gray-500" /> : <ChevronRight size={14} />}
+            <div className="flex items-center justify-center w-4 h-4 rounded-full bg-gray-200 dark:bg-gray-800">
+              <OpacityIcon size={10} className="text-gray-700 dark:text-gray-300" />
+            </div>
+            <span>Opacity</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="text-[10px] font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded min-w-[50px] text-center">
+              {(opacityValue * 100).toFixed(0)}%
+              {useFrameInterpolation.opacity && <span className="text-gray-500 text-[8px] ml-0.5">*</span>}
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    reset.opacity()
+                  }}
+                >
+                  <RotateCcw size={12} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left">Reset opacity</TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+        {expanded.opacity && (
+          <div className="p-3 space-y-3 border-t border-gray-200 dark:border-gray-800">
+            <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+              <span>Transparency</span>
+              <span className="text-[10px] font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
+                {(opacityValue * 100).toFixed(0)}%
+                {useFrameInterpolation.opacity && currentFrame !== undefined && (
+                  <span className="text-gray-500 text-[8px] ml-0.5">
+                    → {(getInterpolatedOpacity(currentFrame) * 100).toFixed(0)}%
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="h-6 w-6 bg-white dark:bg-gray-900"
+                    onClick={() => updateOpacity(Math.max(0, opacityValue * 100 - 5))}
+                  >
+                    <Minus size={12} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Decrease opacity</TooltipContent>
+              </Tooltip>
+              <Slider
+                value={[opacityValue * 100]}
+                min={0}
+                max={100}
+                step={1}
+                onValueChange={(v) => updateOpacity(v[0])}
+                className="flex-1"
+              />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="h-6 w-6 bg-white dark:bg-gray-900"
+                    onClick={() => updateOpacity(Math.min(100, opacityValue * 100 + 5))}
+                  >
+                    <Plus size={12} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Increase opacity</TooltipContent>
+              </Tooltip>
+            </div>
+
+            <Separator className="my-2" />
+
+            <div className="grid grid-cols-3 gap-1.5">
+              {[25, 50, 100].map((p) => (
+                <Tooltip key={p}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={Math.abs(opacityValue * 100 - p) < 1 ? "default" : "outline"} 
+                      className={cn(
+                        "bg-white dark:bg-gray-900 text-xs h-7",
+                        Math.abs(opacityValue * 100 - p) < 1 && "bg-gray-800 text-white hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
+                      )}
+                      onClick={() => updateOpacity(p)}
+                    >
+                      {p}%
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{p === 100 ? "Fully visible" : `${p}% opacity`}</TooltipContent>
+                </Tooltip>
+              ))}
+            </div>
+
+            {/* Keyframe animation toggle */}
+            {totalFrames > 0 && (
+              <>
+                <Separator className="my-2" />
+                
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-medium">Keyframe Animation</span>
+                    <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                      Animate opacity over time
+                    </span>
+                  </div>
+                  <Button
+                    variant={useFrameInterpolation.opacity ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setUseFrameInterpolation(prev => ({...prev, opacity: !prev.opacity}))}
+                    className="gap-1 h-7 text-xs"
+                  >
+                    {useFrameInterpolation.opacity ? (
+                      <>
+                        <Clock size={12} className="text-white" /> Enabled
+                      </>
+                    ) : (
+                      <>
+                        <Clock size={12} /> Enable
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {useFrameInterpolation.opacity && (
+                  <>
+                    <Separator className="my-2" />
+
+                    {/* Timeline with playhead */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs font-medium flex items-center gap-1.5">
+                          <Clock size={12} className="text-gray-500" />
+                          <span>Opacity Timeline</span>
+                          <Badge variant="outline" className="ml-1 text-[10px] py-0 px-1.5 h-4">
+                            {localOverlay.durationInFrames} frames
+                          </Badge>
+                          
+                          {/* Toggle curve view button */}
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button 
+                                variant={showCurvePreview ? "default" : "outline"} 
+                                size="icon" 
+                                className="h-5 w-5 ml-1"
+                                onClick={toggleCurvePreview}
+                              >
+                                <RefreshCw size={10} className={showCurvePreview ? "text-white" : ""} />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top">Toggle curve view (V)</TooltipContent>
+                          </Tooltip>
+                        </div>
+                        <div className="text-[10px] bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded flex items-center gap-1">
+                          <span className="text-gray-500 dark:text-gray-400">Frame:</span>
+                          <span className="font-mono text-gray-700 dark:text-gray-300">{currentFrame - localOverlay.from}</span>
+                          <span className="text-gray-400 dark:text-gray-500">/</span>
+                          <span className="font-mono">{localOverlay.durationInFrames}</span>
+                        </div>
+                      </div>
+
+                      {/* Timeline metadata */}
+                      <div className="p-2 bg-gray-50 dark:bg-gray-900 rounded-md border border-gray-200 dark:border-gray-800 flex justify-between text-[10px]">
+                        <div className="flex flex-col">
+                          <div className="text-gray-500 dark:text-gray-400 mb-0.5">Timeline Position</div>
+                          <div className="font-medium flex items-center">
+                            <span className="text-gray-700 dark:text-gray-300 font-mono">{localOverlay.from}</span>
+                            <span className="mx-1 text-gray-400 dark:text-gray-500">→</span>
+                            <span className="text-gray-700 dark:text-gray-300 font-mono">{localOverlay.from + localOverlay.durationInFrames}</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <div className="text-gray-500 dark:text-gray-400 mb-0.5">Duration</div>
+                          <div className="font-medium">
+                            <span className="font-mono text-gray-700 dark:text-gray-300">{localOverlay.durationInFrames}</span>
+                            <span className="text-gray-500 dark:text-gray-400 ml-0.5">frames</span>
+                            <span className="text-gray-400 dark:text-gray-500 mx-1">·</span>
+                            <span className="font-mono text-gray-700 dark:text-gray-300">{(localOverlay.durationInFrames / 30).toFixed(1)}</span>
+                            <span className="text-gray-500 dark:text-gray-400 ml-0.5">sec</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Keyframe shortcut reference */}
+                      <div className="flex items-center justify-between text-[10px] px-2 py-1 bg-gray-50 dark:bg-gray-900 rounded-md border border-gray-200 dark:border-gray-800">
+                        <div className="flex items-center gap-1.5">
+                          <span className="flex items-center">
+                            <kbd className="px-1.5 py-0.5 bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded shadow-sm text-gray-800 dark:text-gray-200 mr-1">K</kbd>
+                            Add keyframe
+                          </span>
+                          <span className="text-gray-300 dark:text-gray-600">|</span>
+                          <span className="flex items-center">
+                            <kbd className="px-1.5 py-0.5 bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded shadow-sm text-gray-800 dark:text-gray-200 mr-1">Del</kbd>
+                            Remove
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="flex items-center">
+                            <kbd className="px-1.5 py-0.5 bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded shadow-sm text-gray-800 dark:text-gray-200 mr-1">Alt+←→</kbd>
+                            Navigate
+                          </span>
+                          <span className="text-gray-300 dark:text-gray-600">|</span>
+                          <span className="flex items-center">
+                            <kbd className="px-1.5 py-0.5 bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded shadow-sm text-gray-800 dark:text-gray-200 mr-1">V</kbd>
+                            View curve
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Timeline scrubbing state */}
+                      <div className="relative h-16 bg-white dark:bg-black rounded-md border border-gray-200 dark:border-gray-800 overflow-hidden keyframe-timeline">
+                        {/* Frame grid */}
+                        <div className="absolute inset-0">
+                          {/* Major frame markers */}
+                          {Array.from({ length: Math.min(Math.ceil(localOverlay.durationInFrames / 10) + 1, 20) }).map((_, i) => {
+                            const framePos = i * 10; // Every 10 frames
+                            const position = (framePos / localOverlay.durationInFrames) * 100;
+                            if (framePos <= localOverlay.durationInFrames) {
+                              return (
+                                <div 
+                                  key={`major-${i}`} 
+                                  className="absolute top-0 bottom-0 w-px bg-gray-200 dark:bg-gray-700"
+                                  style={{ left: `${position}%` }}
+                                >
+                                  <div className="absolute bottom-1 transform -translate-x-1/2 text-[8px] text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                                    {framePos}
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })}
+                          
+                          {/* Minor frame markers - every 5 frames */}
+                          {Array.from({ length: Math.ceil(localOverlay.durationInFrames / 5) + 1 }).map((_, i) => {
+                            const framePos = i * 5; // Every 5 frames
+                            const position = (framePos / localOverlay.durationInFrames) * 100;
+                            const isMajorMarker = framePos % 10 === 0;
+                            
+                            if (!isMajorMarker && framePos <= localOverlay.durationInFrames) {
+                              return (
+                                <div 
+                                  key={`minor-${i}`} 
+                                  className="absolute top-0 h-1 w-px bg-gray-200 dark:bg-gray-700"
+                                  style={{ 
+                                    left: `${position}%`,
+                                    top: '16px' 
+                                  }}
+                                />
+                              );
+                            }
+                            return null;
+                          })}
+
+                          {/* Background track */}
+                          <div className="absolute bottom-0 left-0 right-0 h-2.5 bg-gray-100 dark:bg-gray-800 rounded-b-sm"></div>
+
+                          {/* Duration track */}
+                          <div className="absolute bottom-0 left-0 h-2.5 bg-gray-300 dark:bg-gray-700 rounded-sm"
+                               style={{ width: '100%' }}></div>
+                           
+                          {/* Opacity curve visualization */}
+                          {showCurvePreview && opacityKeyframes.length >= 2 && (
+                            <div className="absolute inset-x-0 bottom-0 h-10 top-4">
+                              <svg 
+                                width="100%" 
+                                height="100%" 
+                                viewBox="0 0 100 100" 
+                                preserveAspectRatio="none"
+                                className="opacity-70"
+                              >
+                                {/* Area under curve */}
+                                <polygon
+                                  points={`0,100 ${generateCurvePoints()} 100,100`}
+                                  fill="url(#opacity-gradient)"
+                                  className="opacity-30"
+                                />
+                                
+                                {/* Curve line */}
+                                <polyline
+                                  points={generateCurvePoints()}
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="1.5"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  className="text-yellow-500 dark:text-yellow-400"
+                                />
+                                
+                                {/* Gradient definition */}
+                                <defs>
+                                  <linearGradient id="opacity-gradient" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="rgb(250, 204, 21)" stopOpacity="0.2" />
+                                    <stop offset="100%" stopColor="rgb(250, 204, 21)" stopOpacity="0.05" />
+                                  </linearGradient>
+                                </defs>
+                              </svg>
+                            </div>
+                          )}
+                               
+                          {/* Keyframe markers */}
+                          {sortedKeyframes.map((keyframe, index) => {
+                            const position = (keyframe.frame / localOverlay.durationInFrames) * 100;
+                            const isActive = activeKeyframe === keyframe.frame;
+                            const isDragging = draggedKeyframeFrame === keyframe.frame;
+                            
+                            return (
+                              <div
+                                key={keyframe.id || `keyframe-${index}`}
+                                className={`absolute bottom-0 w-2.5 h-2.5 transform -translate-x-1/2 cursor-pointer z-10 ${isDragging ? 'animate-pulse' : ''}`}
+                                style={{ left: `${position}%`, bottom: '0px' }}
+                                onMouseDown={(e) => handleKeyframeDragStart(keyframe.frame, e)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  selectKeyframe(keyframe.frame);
+                                }}
+                                onDoubleClick={(e) => {
+                                  e.stopPropagation();
+                                  // Allow editing the keyframe value directly
+                                  const newValue = prompt('Enter opacity value (0-100):', (keyframe.value * 100).toFixed(0));
+                                  if (newValue !== null) {
+                                    const numValue = Number.parseFloat(newValue);
+                                    if (!isNaN(numValue)) {
+                                      editKeyframeValue(keyframe.frame, numValue);
+                                    }
+                                  }
+                                }}
+                              >
+                                <div 
+                                  className={`w-2.5 h-2.5 rounded-full border-2 shadow-sm transition-all duration-150 
+                                    ${isActive 
+                                      ? 'bg-yellow-500 dark:bg-yellow-400 border-white dark:border-black scale-125' 
+                                      : 'bg-gray-700 dark:bg-gray-300 border-white dark:border-black'
+                                    }
+                                    ${isDragging ? 'scale-125 ring-2 ring-yellow-400 dark:ring-yellow-500' : ''}
+                                  `} 
+                                />
+                                
+                                {/* Display vertical line from keyframe to curve if showing curve */}
+                                {showCurvePreview && (
+                                  <div 
+                                    className="absolute bottom-2.5 w-px h-10 bg-yellow-500/30 dark:bg-yellow-400/30 pointer-events-none"
+                                    style={{ left: '50%' }}
+                                  />
+                                )}
+                                
+                                {/* Value tooltip on hover/active/dragging */}
+                                {(isActive || isDragging) && (
+                                  <div className="absolute bottom-full mb-1 left-1/2 transform -translate-x-1/2 bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-800 text-[8px] font-medium px-1 py-0.5 rounded shadow-sm whitespace-nowrap pointer-events-none z-20">
+                                    {isDragging && dragPreviewValue !== null 
+                                      ? `${(dragPreviewValue * 100).toFixed(0)}%` 
+                                      : `${(keyframe.value * 100).toFixed(0)}%`}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Current frame indicator */}
+                        {currentFrame !== undefined && 
+                          currentFrame >= localOverlay.from && 
+                          currentFrame < localOverlay.from + localOverlay.durationInFrames && (
+                          <div 
+                            className="absolute top-0 bottom-0 flex flex-col items-center pointer-events-none z-20"
+                            style={{
+                              left: `${((currentFrame - localOverlay.from) / localOverlay.durationInFrames) * 100}%`,
+                            }}
+                          >
+                            <div className="w-0 h-0 border-l-[4px] border-r-[4px] border-t-[4px] border-transparent border-t-gray-700 dark:border-t-gray-300"></div>
+                            <div className="w-0.5 h-full bg-gray-700 dark:bg-gray-300"></div>
+                            <div className="absolute top-1 left-1/2 transform -translate-x-1/2 text-[8px] font-medium text-gray-700 dark:text-gray-300 px-1 py-0.5 bg-white/90 dark:bg-black/90 rounded border border-gray-200 dark:border-gray-800 shadow-sm backdrop-blur-sm">
+                              {currentFrame - localOverlay.from}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Scrub indicator */}
+                        {scrubPosition !== null && !timelineDragActive && (
+                          <div 
+                            className="absolute top-0 bottom-0 flex flex-col items-center pointer-events-none z-10"
+                            style={{
+                              left: `${(scrubPosition / localOverlay.durationInFrames) * 100}%`,
+                            }}
+                          >
+                            <div className="w-0.5 h-full bg-gray-400/30 dark:bg-gray-500/30"></div>
+                            <div className="absolute top-1 left-1/2 transform -translate-x-1/2 text-[8px] font-medium px-1 py-0.5 rounded border bg-white/70 dark:bg-black/70 text-gray-700 dark:text-gray-300 backdrop-blur-sm">
+                              {scrubPosition}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Scrubber handle */}
+                        {timelineDragActive && scrubPosition !== null && (
+                          <div 
+                            className="absolute top-0 bottom-0 flex flex-col items-center z-30 cursor-grabbing"
+                            style={{
+                              left: `${(scrubPosition / localOverlay.durationInFrames) * 100}%`,
+                            }}
+                          >
+                            <div className="w-1 h-full bg-blue-500"></div>
+                            <div className="absolute top-1 left-1/2 transform -translate-x-1/2 text-[8px] font-medium px-1.5 py-0.5 rounded bg-blue-500 text-white shadow-sm">
+                              {scrubPosition}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Interactive area for scrubbing */}
+                        <div 
+                          className="absolute inset-0 z-10 cursor-pointer"
+                          onClick={handleTimelineClickWithSnap}
+                          onMouseDown={handleTimelineScrubStart}
+                          onMouseMove={handleTimelineHover}
+                          onMouseLeave={() => !timelineDragActive && setScrubPosition(null)}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Keyframe value editor */}
+                    <div className="mt-3 p-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-md">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="text-xs font-medium flex items-center gap-1.5">
+                          <div className="w-1.5 h-1.5 bg-yellow-500 dark:bg-yellow-400 rounded-full"></div>
+                          {activeKeyframe !== null ? (
+                            <span>Edit Keyframe at Frame {activeKeyframe}</span>
+                          ) : hasKeyframeAtCurrentFrame ? (
+                            <span>Edit Keyframe at Current Frame</span>
+                          ) : (
+                            <span>Set Keyframe Values</span>
+                          )}
+                        </div>
+                        
+                        {activeKeyframe !== null && activeKeyframe !== (currentFrame - localOverlay.from) && (
+                          <Badge 
+                            variant="outline" 
+                            className="text-[9px] py-0 h-4 px-1 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                            onClick={() => navigateToRelativeFrame(activeKeyframe)}
+                          >
+                            Go to frame
+                          </Badge>
+                        )}
+                      </div>
+                      
+                      <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 items-center">
+                        <div className="text-[10px] text-gray-500 dark:text-gray-400">Frame:</div>
+                        <div className="flex items-center gap-1">
+                          <div className="text-[10px] font-mono bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded min-w-[30px] text-center">
+                            {activeKeyframe !== null ? 
+                              activeKeyframe : 
+                              hasKeyframeAtCurrentFrame ? 
+                                (currentFrame - localOverlay.from) : 
+                                '–'
+                            }
+                          </div>
+                          <span className="text-[10px] text-gray-500 dark:text-gray-400">of {localOverlay.durationInFrames}</span>
+                        </div>
+                        
+                        <div className="text-[10px] text-gray-500 dark:text-gray-400">Opacity:</div>
+                        <div className="flex items-center gap-1.5">
+                          <Slider 
+                            value={[opacityValue * 100]}
+                            min={0}
+                            max={100}
+                            step={1}
+                            onValueChange={(values) => {
+                              const newOpacity = values[0]
+                              updateOpacity(newOpacity)
+                              
+                              // If we have an active keyframe or are at a keyframe, update its value
+                              if (activeKeyframe !== null) {
+                                updateKeyframeOpacity(activeKeyframe, newOpacity)
+                              } else if (hasKeyframeAtCurrentFrame) {
+                                updateKeyframeOpacity(currentFrame - localOverlay.from, newOpacity)
+                              }
+                            }}
+                            className="flex-1"
+                          />
+                          <div 
+                            className="text-[10px] font-mono bg-white dark:bg-black px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-700 min-w-[40px] text-center cursor-pointer"
+                            onClick={() => {
+                              // Allow direct editing of the opacity value
+                              const newValue = prompt('Enter opacity value (0-100):', (opacityValue * 100).toFixed(0))
+                              if (newValue !== null) {
+                                const numValue = Number.parseFloat(newValue)
+                                if (!isNaN(numValue)) {
+                                  updateOpacity(numValue)
+                                  
+                                  // If we have an active keyframe or are at a keyframe, update its value
+                                  if (activeKeyframe !== null) {
+                                    updateKeyframeOpacity(activeKeyframe, numValue)
+                                  } else if (hasKeyframeAtCurrentFrame) {
+                                    updateKeyframeOpacity(currentFrame - localOverlay.from, numValue)
+                                  }
+                                }
+                              }
+                            }}
+                          >
+                            {(opacityValue * 100).toFixed(0)}%
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Keyframe controls */}
+                      <div className="mt-3 flex justify-between items-center">
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            className="h-6 w-6 bg-white dark:bg-black"
+                            title="Previous Frame"
+                            onClick={goToPreviousFrame}
+                          >
+                            <ArrowLeft className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            className="h-6 w-6 bg-white dark:bg-black"
+                            title="Next Frame"
+                            onClick={goToNextFrame}
+                          >
+                            <ArrowRight className="h-3 w-3" />
+                          </Button>
+                          
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                className="h-6 w-6 bg-white dark:bg-black text-yellow-600 dark:text-yellow-400"
+                                title="Previous Keyframe (Alt+Left)"
+                                onClick={navigateToPrevKeyframe}
+                              >
+                                <div className="relative flex items-center justify-center">
+                                  <ArrowLeft className="h-3 w-3" />
+                                  <div className="absolute w-1 h-1 bg-yellow-500 dark:bg-yellow-400 rounded-full" />
+                                </div>
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">Previous Keyframe (Alt+Left)</TooltipContent>
+                          </Tooltip>
+                          
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                className="h-6 w-6 bg-white dark:bg-black text-yellow-600 dark:text-yellow-400"
+                                title="Next Keyframe (Alt+Right)"
+                                onClick={navigateToNextKeyframe}
+                              >
+                                <div className="relative flex items-center justify-center">
+                                  <ArrowRight className="h-3 w-3" />
+                                  <div className="absolute w-1 h-1 bg-yellow-500 dark:bg-yellow-400 rounded-full" />
+                                </div>
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">Next Keyframe (Alt+Right)</TooltipContent>
+                          </Tooltip>
+                        </div>
+                        
+                        <div className="flex items-center gap-1">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant={hasKeyframeAtCurrentFrame ? "destructive" : "default"}
+                                className="h-6 px-1.5 text-[10px] flex gap-1 items-center"
+                                onClick={hasKeyframeAtCurrentFrame ? 
+                                  () => removeKeyframe(currentFrame - localOverlay.from) : 
+                                  addKeyframeAtCurrentTime
+                                }
+                              >
+                                {hasKeyframeAtCurrentFrame ? (
+                                  <>
+                                    <Trash2 className="h-2.5 w-2.5" /> Remove
+                                  </>
+                                ) : (
+                                  <>
+                                    <Plus className="h-2.5 w-2.5" /> Add Keyframe
+                                  </>
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">
+                              {hasKeyframeAtCurrentFrame ? "Remove keyframe (Delete)" : "Add keyframe at current position (K)"}
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </div>
+                      
+                      {/* Quick opacity presets for keyframe */}
+                      <div className="mt-2.5 flex justify-between gap-1.5">
+                        {[0, 25, 50, 75, 100].map((percent) => (
+                          <Button
+                            key={percent}
+                            variant={Math.abs(opacityValue * 100 - percent) < 1 ? "default" : "outline"}
+                            size="sm"
+                            className={cn(
+                              "h-6 text-[10px] px-0 flex-1",
+                              Math.abs(opacityValue * 100 - percent) < 1 
+                                ? "bg-gray-800 dark:bg-gray-700 text-white" 
+                                : "bg-white dark:bg-black"
+                            )}
+                            onClick={() => {
+                              updateOpacity(percent)
+                              
+                              // If we have an active keyframe or are at a keyframe, update its value
+                              if (activeKeyframe !== null) {
+                                updateKeyframeOpacity(activeKeyframe, percent)
+                              } else if (hasKeyframeAtCurrentFrame) {
+                                updateKeyframeOpacity(currentFrame - localOverlay.from, percent)
+                              }
+                            }}
+                          >
+                            {percent}%
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    {/* Keyframe list */}
+                    <div className="mt-3">
+                      <div className="text-xs font-medium mb-1.5 flex items-center justify-between">
+                        <div className="flex items-center">
+                          <span className="mr-1.5">Keyframes</span>
+                          <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4">
+                            {opacityKeyframes.length}
+                          </Badge>
+                        </div>
+                        <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                          Double-click to edit
+                        </div>
+                      </div>
+                      <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                        {sortedKeyframes.map((keyframe, index) => {
+                          const isActive = keyframe.frame === activeKeyframe;
+                          const isAtCurrentFrame = keyframe.frame === (currentFrame - localOverlay.from);
+                          return (
+                            <div 
+                              key={keyframe.id || `kf-item-${index}`}
+                              className={cn(
+                                "flex items-center justify-between p-1.5 rounded-md border transition-colors relative",
+                                isActive 
+                                  ? "bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800 ring-2 ring-yellow-400/30 dark:ring-yellow-400/20" 
+                                  : isAtCurrentFrame
+                                    ? "bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700" 
+                                    : "bg-gray-50 dark:bg-gray-900 border-gray-200 dark:border-gray-800 hover:bg-gray-100 dark:hover:bg-gray-800"
+                              )}
+                              onClick={() => selectKeyframe(keyframe.frame)}
+                              onDoubleClick={() => {
+                                // Allow editing the keyframe value directly
+                                const newValue = prompt('Enter opacity value (0-100):', (keyframe.value * 100).toFixed(0));
+                                if (newValue !== null) {
+                                  const numValue = Number.parseFloat(newValue);
+                                  if (!isNaN(numValue)) {
+                                    editKeyframeValue(keyframe.frame, numValue);
+                                  }
+                                }
+                              }}
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <div 
+                                  className={cn(
+                                    "w-1.5 h-1.5 rounded-full",
+                                    isActive
+                                      ? "bg-yellow-500 dark:bg-yellow-400"
+                                      : isAtCurrentFrame
+                                        ? "bg-gray-700 dark:bg-gray-300"
+                                        : "bg-gray-500 dark:bg-gray-500"
+                                  )}
+                                />
+                                <span className={cn(
+                                  "text-[10px]",
+                                  isActive ? "font-medium text-yellow-800 dark:text-yellow-300" : "font-medium"
+                                )}>
+                                  Frame {keyframe.frame}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <span className={cn(
+                                  "text-[10px] font-mono px-1 py-0.5 rounded border",
+                                  isActive 
+                                    ? "bg-yellow-100 dark:bg-yellow-900 border-yellow-200 dark:border-yellow-800" 
+                                    : "bg-white dark:bg-black border-gray-200 dark:border-gray-800"
+                                )}>
+                                  {(keyframe.value * 100).toFixed(0)}%
+                                </span>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant={isActive ? "default" : "ghost"}
+                                      size="icon"
+                                      className={cn(
+                                        "h-5 w-5 rounded-full",
+                                        isActive 
+                                          ? "bg-red-500 hover:bg-red-600 text-white" 
+                                          : "hover:bg-gray-100 dark:hover:bg-gray-800"
+                                      )}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        removeKeyframe(keyframe.frame);
+                                        if (activeKeyframe === keyframe.frame) {
+                                          setActiveKeyframe(null);
+                                        }
+                                      }}
+                                      disabled={opacityKeyframes.length <= 2}
+                                    >
+                                      <X className="h-2.5 w-2.5" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="left">Delete keyframe</TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      </div>
+    </TooltipProvider>
+  )
+}

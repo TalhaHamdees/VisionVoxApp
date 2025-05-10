@@ -1,6 +1,6 @@
 import React from "react";
 import { ImageOverlay } from "../../../types";
-import { PaintBucket, Settings, ArrowLeft, Move } from "lucide-react";
+import { PaintBucket, Settings, ArrowLeft } from "lucide-react";
 import {
   Tabs,
   TabsContent,
@@ -9,9 +9,7 @@ import {
 } from "../../../../ui/tabs";
 import { ImageStylePanel } from "./image-style-panel";
 import { ImageSettingsPanel } from "./image-settings-panel";
-import { ImageTransformPanel } from "./image-transform-panel";
 import { Button } from "@/components/ui/button";
-import { useEditorContext } from "../../../contexts/editor-context";
 
 /**
  * Props for the ImageDetails component
@@ -36,7 +34,6 @@ interface ImageDetailsProps {
  * - Image preview
  * - Style customization panel
  * - Settings configuration panel
- * - Transform panel for adjusting position, scale, rotation and opacity
  * - Real-time updates
  *
  * The component serves as the main configuration interface
@@ -55,9 +52,6 @@ export const ImageDetails: React.FC<ImageDetailsProps> = ({
   setLocalOverlay,
   onBack
 }) => {
-  // Get current frame and total duration from editor context
-  const { currentFrame, durationInFrames } = useEditorContext();
-
   // Handle style updates (opacity, filter, etc.)
   const handleStyleChange = (updates: Partial<ImageOverlay["styles"]>) => {
     const updatedOverlay = {
@@ -107,18 +101,8 @@ export const ImageDetails: React.FC<ImageDetailsProps> = ({
         />
       </div>
 
-      <Tabs defaultValue="transform" className="w-full">
-        <TabsList className="w-full grid grid-cols-3 bg-gray-100/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-sm border border-gray-200 dark:border-gray-700 gap-1">
-          <TabsTrigger
-            value="transform"
-            className="data-[state=active]:bg-blue-500/20 data-[state=active]:text-gray-900 dark:data-[state=active]:text-white 
-            rounded-sm transition-all duration-200 text-gray-600 dark:text-zinc-400 hover:text-gray-900 dark:hover:text-zinc-200 hover:bg-gray-200/50 dark:hover:bg-gray-700/50"
-          >
-            <span className="flex items-center gap-2 text-xs">
-              <Move className="w-3 h-3" />
-              Transform
-            </span>
-          </TabsTrigger>
+      <Tabs defaultValue="style" className="w-full">
+        <TabsList className="w-full grid grid-cols-2 bg-gray-100/50 dark:bg-gray-800/50 backdrop-blur-sm rounded-sm border border-gray-200 dark:border-gray-700 gap-1">
           <TabsTrigger
             value="style"
             className="data-[state=active]:bg-blue-500/20 data-[state=active]:text-gray-900 dark:data-[state=active]:text-white 
@@ -141,16 +125,6 @@ export const ImageDetails: React.FC<ImageDetailsProps> = ({
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="transform" className="space-y-4 mt-4">
-          <ImageTransformPanel
-            localOverlay={localOverlay}
-            handleStyleChange={handleStyleChange}
-            handlePositionChange={handlePositionChange}
-            totalFrames={durationInFrames}
-            currentFrame={currentFrame}
-          />
-        </TabsContent>
-
         <TabsContent value="style" className="space-y-4 mt-4">
           <ImageStylePanel
             localOverlay={localOverlay}
@@ -165,6 +139,16 @@ export const ImageDetails: React.FC<ImageDetailsProps> = ({
           />
         </TabsContent>
       </Tabs>
+      
+      {/* Add note about advanced settings */}
+      <div className="text-xs text-muted-foreground bg-muted/20 p-3 rounded-md mt-3 border border-border/50">
+        <p className="flex items-center justify-center">
+          <svg className="w-3.5 h-3.5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Advanced transform controls and keyframe animation are available in the main editor panel.
+        </p>
+      </div>
     </div>
   );
 };

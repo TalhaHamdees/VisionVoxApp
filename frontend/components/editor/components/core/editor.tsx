@@ -9,6 +9,7 @@ import { FPS } from "../../constants"
 import Timeline from "../timeline/timeline"
 import { VideoPlayer } from "./video-player"
 import { Overlay } from "../../types"
+import AdvancedSettingsPanel from "./advanced-settings-panel"
 
 /**
  * Main Editor Component
@@ -34,9 +35,9 @@ import { Overlay } from "../../types"
  * - Mobile detection and fallback UI
  *
  * @example
- * ```tsx
+ * \`\`\`tsx
  * <Editor />
- * ```
+ * \`\`\`
  */
 export const Editor: React.FC = () => {
   /** State to track if the current viewport is mobile-sized */
@@ -44,6 +45,9 @@ export const Editor: React.FC = () => {
   
   /** State to store copied items */
   const [copiedItems, setCopiedItems] = useState<Overlay[]>([])
+
+  /** State for advanced settings tab selection */
+  const [selectedSettingsTab, setSelectedSettingsTab] = useState<"keyframes" | "effects" | "audio">("keyframes")
 
   /**
    * Effect to handle mobile detection and window resize events
@@ -192,18 +196,18 @@ export const Editor: React.FC = () => {
    */
   if (isMobile) {
     return (
-      <div className="flex items-center justify-center h-screen bg-white dark:bg-black p-6">
-        <div className="text-center text-black dark:text-white">
+      <div className="flex items-center justify-center h-screen bg-black dark:bg-black p-6">
+        <div className="text-center text-white dark:text-white">
           <h2 className="text-xl font-bold mb-3">React Video Editor</h2>
-          <p className="text-sm text-gray-700 dark:text-gray-300 font-light mb-4">
+          <p className="text-sm text-gray-300 dark:text-gray-300 font-light mb-4">
             Currently, React Video Editor is designed as a full-screen desktop experience. We&apos;re actively working
             on making it mobile-friendly! 👀
           </p>
-          <p className="text-sm text-gray-700 dark:text-gray-300 font-light">
+          <p className="text-sm text-gray-300 dark:text-gray-300 font-light">
             Want mobile support? Let us know by voting{" "}
             <a
               href="https://reactvideoeditor.featurebase.app/p/bulb-mobile-layout-version-2"
-              className="text-black dark:text-white font-medium underline hover:no-underline"
+              className="text-white dark:text-white font-medium underline hover:no-underline"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -220,15 +224,71 @@ export const Editor: React.FC = () => {
    * Main editor layout
    * Organized in a column layout with the following sections:
    * 1. Editor header (controls and options)
-   * 2. Main content area (video player)
+   * 2. Main content area (video player on right, settings on left)
    * 3. Timeline controls
    * 4. Timeline visualization
    */
   return (
     <div className="flex flex-col h-screen bg-white dark:bg-black">
       <EditorHeader />
-      <div className="flex-grow flex flex-col lg:flex-row overflow-hidden">
-        <VideoPlayer playerRef={playerRef} />
+      <div className="flex-grow flex flex-row overflow-hidden">
+        {/* Left side panel area (red outline in the screenshot) */}
+        <div className="w-1/2 border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-black overflow-y-auto">
+          <div className="h-full flex flex-col">
+            {/* Tab navigation for the advanced settings */}
+            <div className="flex space-x-2 border-b border-gray-200 dark:border-gray-800 p-2 bg-white dark:bg-black">
+              <button 
+                className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                  selectedSettingsTab === "keyframes" 
+                    ? "bg-gray-200 text-black dark:bg-gray-800 dark:text-white" 
+                    : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+                }`}
+                onClick={() => setSelectedSettingsTab("keyframes")}
+              >
+                Keyframes
+              </button>
+              <button 
+                className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                  selectedSettingsTab === "effects" 
+                    ? "bg-gray-200 text-black dark:bg-gray-800 dark:text-white" 
+                    : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+                }`}
+                onClick={() => setSelectedSettingsTab("effects")}
+              >
+                Effects
+              </button>
+              <button 
+                className={`px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                  selectedSettingsTab === "audio" 
+                    ? "bg-gray-200 text-black dark:bg-gray-800 dark:text-white" 
+                    : "text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
+                }`}
+                onClick={() => setSelectedSettingsTab("audio")}
+              >
+                Audio
+              </button>
+            </div>
+            
+            {/* Content area for the advanced settings */}
+            <div className="flex-1 overflow-y-auto">
+              <AdvancedSettingsPanel 
+                selectedTab={selectedSettingsTab}
+                selectedOverlay={overlays.find(o => o.id === selectedOverlayId) || null}
+                selectedOverlayId={selectedOverlayId}
+                selectedOverlayIds={selectedOverlayIds}
+                overlays={overlays}
+                handleOverlayChange={handleOverlayChange}
+                currentFrame={currentFrame}
+                durationInFrames={durationInFrames}
+              />
+            </div>
+          </div>
+        </div>
+        
+        {/* Right side video player (green outline in the screenshot) */}
+        <div className="w-1/2">
+          <VideoPlayer playerRef={playerRef} />
+        </div>
       </div>
 
       <TimelineControls
@@ -273,4 +333,3 @@ export const Editor: React.FC = () => {
     </div>
   )
 }
-

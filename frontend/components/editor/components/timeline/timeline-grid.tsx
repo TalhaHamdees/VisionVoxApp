@@ -113,7 +113,19 @@ const TimelineGrid: React.FC<TimelineGridProps> = ({
       }
     } else {
       // When no modifier key is pressed, single selection
+      // This will update both selection mechanisms via handleSingleSelection in useOverlays
       setSelectedOverlayId(id);
+      
+      // Additional defensive code to ensure selection is registered
+      console.log("Timeline selecting item:", id);
+      
+      // Force selection after a short delay to ensure state updates
+      setTimeout(() => {
+        const event = new CustomEvent('timeline:forceselection', { 
+          detail: { id }
+        });
+        window.dispatchEvent(event);
+      }, 50);
     }
   }, [toggleSelection, setSelectedOverlayId]);
 

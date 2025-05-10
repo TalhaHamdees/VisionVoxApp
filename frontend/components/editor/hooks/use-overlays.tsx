@@ -125,7 +125,10 @@ export const useOverlays = () => {
       const overlayWithNewId = { ...newOverlay, id: newId } as Overlay;
       return [...prevOverlays, overlayWithNewId];
     });
+    
+    // Set both selectedOverlayId and selectedOverlayIds to ensure consistent selection state
     setSelectedOverlayId(newId!);
+    setSelectedOverlayIds(new Set([newId!]));
   }, []);
 
   /**

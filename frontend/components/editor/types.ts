@@ -343,4 +343,9 @@ export interface ImageOverlay extends BaseOverlay {
   src: string;
   content?: string; // Optional thumbnail/preview
   styles: ImageStyles;
+  keyframes?: Array<{
+    frame: number;
+    value: number;
+    id?: string;
+  }>;
 }
