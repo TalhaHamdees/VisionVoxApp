@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch"
 import { ChevronRight } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { ImageOverlay } from "../../../../types"
-import { PositionKeyframe, generateKeyframeId, formatters } from "../image-transform-types"
+import { PositionKeyframe, generateKeyframeId, formatters, generateKeyframeWithOverlayId } from "../image-transform-types"
 import { KeyframeTimeline } from "./keyframe-timeline"
 import { Button } from "@/components/ui/button"
 
@@ -92,11 +92,12 @@ export const PositionTab: React.FC<PositionTabProps> = ({
         onKeyframeChange(updatedKeyframes)
       }
     } else {
-      // Add new keyframe with ID
+      // Add new keyframe with ID tied to this overlay
       const newKeyframe = {
         frame: relativeFrame,
         value: { ...position },
-        id: generateKeyframeId(),
+        id: generateKeyframeWithOverlayId(localOverlay.uniqueId),
+        overlayUniqueId: localOverlay.uniqueId, // Store overlay association
       }
 
       const newKeyframes = [...positionKeyframes, newKeyframe]
@@ -615,6 +616,7 @@ export const PositionTab: React.FC<PositionTabProps> = ({
                 </div>
               </div>
               
+              {/* Use KeyframeTimeline for visual editing */}
               <KeyframeTimeline
                 overlayFrom={localOverlay.from}
                 durationInFrames={localOverlay.durationInFrames}
@@ -629,8 +631,8 @@ export const PositionTab: React.FC<PositionTabProps> = ({
                 propertyValue={position}
                 hasKeyframeAtCurrentFrame={hasKeyframeAtCurrentFrame}
                 propertyLabel="Position"
-                valueFormatter={formatters.position}
-                curveColor="blue"
+                valueFormatter={(value) => `X: ${Math.round((value as any).x)}px, Y: ${Math.round((value as any).y)}px`}
+                curveColor="green"
                 getInterpolatedValue={getInterpolatedPosition}
                 generateCurvePoints={generateCurvePoints}
                 toggleCurvePreview={toggleCurvePreview}
@@ -641,14 +643,17 @@ export const PositionTab: React.FC<PositionTabProps> = ({
                 navigateToNextKeyframe={navigateToNextKeyframe}
                 navigateToPrevKeyframe={navigateToPrevKeyframe}
                 navigateToRelativeFrame={navigateToRelativeFrame}
-                updatePropertyValue={updatePosition}
+                updatePropertyValue={(value) => {
+                  const pos = value as any;
+                  updatePosition({ x: pos.x, y: pos.y });
+                }}
                 setActiveKeyframe={setActiveKeyframe}
                 updateKeyframeValue={updateKeyframeValue}
                 editKeyframeValue={editKeyframeValue}
                 setDraggedKeyframeFrame={setDraggedKeyframeFrame}
                 setDragStartX={setDragStartX}
                 setDragPreviewValue={setDragPreviewValue}
-                sortedKeyframes={sortedKeyframes}
+                localOverlay={localOverlay}
               />
             </div>
           )}

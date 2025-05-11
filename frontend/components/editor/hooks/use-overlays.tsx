@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { Overlay, OverlayType, CaptionStyles, CaptionOverlay, SelectedItems } from "../types";
+import { Overlay, OverlayType, CaptionStyles, CaptionOverlay, SelectedItems, generateOverlayId } from "../types";
 import { defaultCaptionStyles } from "../components/overlays/captions/caption-settings";
 
 /**
@@ -122,7 +122,16 @@ export const useOverlays = () => {
         prevOverlays.length > 0
           ? Math.max(...prevOverlays.map((o) => o.id)) + 1
           : 0;
-      const overlayWithNewId = { ...newOverlay, id: newId } as Overlay;
+      
+      // Create a unique string ID for stable keyframe association
+      const uniqueId = (newOverlay as any).uniqueId || generateOverlayId();
+      
+      const overlayWithNewId = { 
+        ...newOverlay, 
+        id: newId,
+        uniqueId
+      } as Overlay;
+      
       return [...prevOverlays, overlayWithNewId];
     });
     
@@ -167,6 +176,7 @@ export const useOverlays = () => {
       const duplicatedOverlay: Overlay = {
         ...overlayToDuplicate,
         id: newId,
+        uniqueId: generateOverlayId(), // Generate a new uniqueId for the duplicate
         from: overlayToDuplicate.from + overlayToDuplicate.durationInFrames,
       };
 

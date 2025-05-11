@@ -1,7 +1,7 @@
 "use client"
 
 import type * as React from "react"
-import { Film, Music, Type, Subtitles, ImageIcon, Library } from "lucide-react"
+import { Film, Music, Type, Subtitles, ImageIcon, Library, FileText } from "lucide-react"
 import Image from "next/image"
 import {
   Sidebar,
@@ -23,6 +23,7 @@ import { CaptionsPanel } from "../overlays/captions/captions-panel"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { ImageOverlayPanel } from "../overlays/images/image-overlay-panel"
 import MediaPanel from "../overlays/media/media-panel"
+import ScriptsPanel from "../overlays/scripts/scripts-panel"
 
 /**
  * AppSidebar Component
@@ -52,6 +53,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         return "Image"
       case OverlayType.MEDIA:
         return "Media"
+      case OverlayType.SCRIPT:
+        return "Scripts"
       default:
         return "Unknown"
     }
@@ -87,6 +90,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       type: OverlayType.CAPTION,
     },
     {
+      title: getPanelTitle(OverlayType.SCRIPT),
+      url: "#",
+      icon: FileText,
+      panel: OverlayType.SCRIPT,
+      type: OverlayType.SCRIPT,
+    },
+    {
       title: getPanelTitle(OverlayType.IMAGE),
       url: "#",
       icon: ImageIcon,
@@ -120,6 +130,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         return <ImageOverlayPanel />
       case OverlayType.MEDIA:
         return <MediaPanel />
+      case OverlayType.SCRIPT:
+        return <ScriptsPanel />
       default:
         return null
     }

@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useCallback, useEffect } from "react"
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -13,6 +13,7 @@ export interface Keyframe<T = any> {
   frame: number
   value: T
   id?: string
+  overlayUniqueId?: string
 }
 
 // Props for the generic KeyframeTimeline component
@@ -67,8 +68,8 @@ export interface KeyframeTimelineProps<T = any> {
   setDragStartX: (x: number) => void
   setDragPreviewValue: (value: T | null) => void
   
-  // Sorted keyframes for display
-  sortedKeyframes: Keyframe<T>[]
+  // Local overlay information
+  localOverlay?: { uniqueId: string }
 }
 
 export const KeyframeTimeline = <T extends any>({
@@ -104,8 +105,24 @@ export const KeyframeTimeline = <T extends any>({
   setDraggedKeyframeFrame,
   setDragStartX,
   setDragPreviewValue,
-  sortedKeyframes,
+  localOverlay,
 }: KeyframeTimelineProps<T>) => {
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  
+  // Filter keyframes to only show ones associated with this overlay
+  const filteredKeyframes = useMemo(() => {
+    if (!localOverlay?.uniqueId) return keyframes;
+    
+    return keyframes.filter(kf => 
+      kf.overlayUniqueId === localOverlay.uniqueId
+    );
+  }, [keyframes, localOverlay]);
+  
+  // Sort keyframes by frame number
+  const sortedKeyframes = useMemo(() => {
+    return [...filteredKeyframes].sort((a, b) => a.frame - b.frame)
+  }, [filteredKeyframes]);
+  
   // Timeline scrubbing state
   const [scrubPosition, setScrubPosition] = useState<number | null>(null)
   const [timelineDragActive, setTimelineDragActive] = useState<boolean>(false)
@@ -206,14 +223,18 @@ export const KeyframeTimeline = <T extends any>({
       const closestKeyframe = findClosestKeyframe(frameOffset)
       if (closestKeyframe) {
         // Navigate to the closest keyframe
-        navigateToRelativeFrame(closestKeyframe.frame)
+        if (typeof navigateToRelativeFrame === 'function') {
+          navigateToRelativeFrame(closestKeyframe.frame)
+        }
         setActiveKeyframe(closestKeyframe.frame)
         return
       }
     }
     
     // Normal timeline navigation
-    navigateToRelativeFrame(frameOffset)
+    if (typeof navigateToRelativeFrame === 'function') {
+      navigateToRelativeFrame(frameOffset)
+    }
   }
 
   // Start dragging timeline scrubber
@@ -250,7 +271,9 @@ export const KeyframeTimeline = <T extends any>({
     setScrubPosition(frameOffset)
     
     // Navigate to this frame (this would update the player position)
-    navigateToRelativeFrame(frameOffset)
+    if (typeof navigateToRelativeFrame === 'function') {
+      navigateToRelativeFrame(frameOffset)
+    }
   }, [timelineDragActive, durationInFrames, navigateToRelativeFrame])
 
   // End timeline scrubber dragging
@@ -460,7 +483,9 @@ export const KeyframeTimeline = <T extends any>({
             />
             <div className="flex items-center gap-1">
               <span className={`w-${propertyLabel.toLowerCase() === 'scale' ? '12' : '10'} text-xs tabular-nums text-muted-foreground`}>
-                {valueFormatter(propertyValue)}
+                {typeof valueFormatter === 'function' && propertyValue !== null && propertyValue !== undefined
+                  ? valueFormatter(propertyValue)
+                  : String(propertyValue)}
               </span>
               {propertyLabel.toLowerCase() === 'scale' && (
                 <Button
@@ -519,7 +544,9 @@ export const KeyframeTimeline = <T extends any>({
           </div>
         ) : (
           <div className="flex-1 text-xs">
-            {valueFormatter(propertyValue)}
+            {typeof valueFormatter === 'function' && propertyValue !== null && propertyValue !== undefined
+              ? valueFormatter(propertyValue)
+              : String(propertyValue)}
           </div>
         )}
       </div>
@@ -572,7 +599,9 @@ export const KeyframeTimeline = <T extends any>({
           onClick={() => {
             if (hasKeyframeAtCurrentFrame) {
               // Update existing keyframe after confirming
-              const currentValue = valueFormatter(propertyValue);
+              const currentValue = typeof valueFormatter === 'function' && propertyValue !== null && propertyValue !== undefined
+                ? valueFormatter(propertyValue)
+                : String(propertyValue);
               const newValueInput = prompt(`Update ${propertyLabel.toLowerCase()} value:`, currentValue);
               if (newValueInput !== null) {
                 // Try to parse the input value if it's a string
@@ -612,7 +641,9 @@ export const KeyframeTimeline = <T extends any>({
               }
             } else {
               // Add new keyframe after getting value input
-              const currentValue = valueFormatter(propertyValue);
+              const currentValue = typeof valueFormatter === 'function' && propertyValue !== null && propertyValue !== undefined
+                ? valueFormatter(propertyValue)
+                : String(propertyValue);
               const newValueInput = prompt(`Set ${propertyLabel.toLowerCase()} value for new keyframe:`, currentValue);
               if (newValueInput !== null) {
                 // Try to parse the input value if it's a string
@@ -758,7 +789,11 @@ export const KeyframeTimeline = <T extends any>({
             const position = (keyframe.frame / durationInFrames) * 100;
             const isActive = activeKeyframe === keyframe.frame;
             const isDragging = draggedKeyframeFrame === keyframe.frame;
-            const formattedValue = valueFormatter(keyframe.value);
+            
+            // Safely handle valueFormatter calls with a check
+            const formattedValue = keyframe.value !== undefined && keyframe.value !== null && typeof valueFormatter === 'function'
+              ? valueFormatter(keyframe.value)
+              : String(keyframe.value);
             
             return (
               <div
@@ -804,7 +839,7 @@ export const KeyframeTimeline = <T extends any>({
                 {(isActive || isDragging) && (
                   <div className="absolute bottom-full mb-1 left-1/2 transform -translate-x-1/2 bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-800 text-[8px] font-medium px-1 py-0.5 rounded shadow-sm whitespace-nowrap pointer-events-none z-20">
                     {isDragging && dragPreviewValue !== null 
-                      ? valueFormatter(dragPreviewValue)
+                      ? (typeof valueFormatter === 'function' ? valueFormatter(dragPreviewValue) : String(dragPreviewValue))
                       : formattedValue}
                   </div>
                 )}
@@ -893,7 +928,9 @@ export const KeyframeTimeline = <T extends any>({
                 </div>
                 <div className="text-[10px] font-mono flex items-center gap-1">
                   <span className={isActive ? `text-${curveColor}-700 dark:text-${curveColor}-300` : ""}>
-                    {valueFormatter(keyframe.value)}
+                    {typeof valueFormatter === 'function' && keyframe.value !== null && keyframe.value !== undefined
+                      ? valueFormatter(keyframe.value)
+                      : String(keyframe.value)}
                   </span>
                   <Button
                     variant="ghost"

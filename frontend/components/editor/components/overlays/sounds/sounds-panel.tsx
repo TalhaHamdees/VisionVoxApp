@@ -3,7 +3,7 @@
 import type React from "react"
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Button } from "@/components/ui/button"
-import { Play, Pause, Upload, Trash2, Volume2, VolumeX, ChevronDown, ChevronUp } from "lucide-react"
+import { Play, Pause, Upload, Trash2, Volume2, VolumeX, ChevronDown, ChevronUp, FileText } from "lucide-react"
 import { type LocalSound, OverlayType, type SoundOverlay } from "../../../types"
 import { useTimelinePositioning } from "../../../hooks/use-timeline-positioning"
 import { useEditorContext } from "../../../contexts/editor-context"
@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Slider } from "@/components/ui/slider"
 import { getAllAudioFiles, getAudioFileById, deleteAudioFile } from "@/lib/indexed-db"
+import { useSidebar } from "../../../contexts/sidebar-context"
 
 /**
  * SoundsPanel Component
@@ -54,6 +55,8 @@ const SoundsPanel: React.FC = () => {
       persistent?: boolean
     }>
   >([])
+
+  const { setActivePanel } = useSidebar()
 
   // Load VisionVox audio files from localStorage
   useEffect(() => {
@@ -541,13 +544,26 @@ const SoundsPanel: React.FC = () => {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs flex-1"
+                className="h-7 text-xs"
                 onClick={(e) => {
                   e.stopPropagation()
                   handleAddToTimeline(sound)
                 }}
               >
                 Add to Timeline
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs flex items-center"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setActivePanel(OverlayType.SCRIPT)
+                }}
+              >
+                <FileText className="h-3 w-3 mr-1" />
+                Script
               </Button>
 
               <Button
@@ -643,13 +659,26 @@ const SoundsPanel: React.FC = () => {
               <Button
                 variant="outline"
                 size="sm"
-                className="h-7 text-xs flex-1"
+                className="h-7 text-xs"
                 onClick={(e) => {
                   e.stopPropagation()
                   handleAddVisionVoxAudio(file)
                 }}
               >
                 Add to Timeline
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs flex items-center"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setActivePanel(OverlayType.SCRIPT)
+                }}
+              >
+                <FileText className="h-3 w-3 mr-1" />
+                Script
               </Button>
 
               <Button

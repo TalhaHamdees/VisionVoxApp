@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useCurrentFrame } from "remotion";
 import { ImageOverlay } from "../../../types";
 import { animationTemplates } from "../../../templates/animation-templates";
@@ -51,6 +51,49 @@ export const ImageLayerContent: React.FC<ImageLayerContentProps> = ({
   const frame = useCurrentFrame();
   const isExitPhase = frame >= overlay.durationInFrames - 30;
   const { getAspectRatioDimensions } = useEditorContext();
+  const [imageError, setImageError] = useState(false);
+  const [imageSource, setImageSource] = useState(overlay.src);
+  
+  // Handle blob URLs that might be invalid
+  useEffect(() => {
+    // If the source is a blob URL, try to convert it to a data URL
+    if (imageSource.startsWith('blob:')) {
+      const convertBlobToDataUrl = async () => {
+        try {
+          const response = await fetch(imageSource);
+          if (!response.ok) {
+            throw new Error('Failed to fetch blob URL');
+          }
+          
+          const blob = await response.blob();
+          const reader = new FileReader();
+          
+          reader.onloadend = () => {
+            const dataUrl = reader.result as string;
+            setImageSource(dataUrl);
+          };
+          
+          reader.onerror = () => {
+            console.error('Failed to convert blob to data URL');
+            setImageError(true);
+          };
+          
+          reader.readAsDataURL(blob);
+        } catch (error) {
+          console.error('Error converting blob URL:', error);
+          setImageError(true);
+        }
+      };
+      
+      convertBlobToDataUrl();
+    }
+  }, [imageSource]);
+  
+  // Reset error state if src changes
+  useEffect(() => {
+    setImageError(false);
+    setImageSource(overlay.src);
+  }, [overlay.src]);
   
   // Get the canvas dimensions for proper positioning and constraints
   const canvasDimensions = getAspectRatioDimensions();
@@ -117,9 +160,34 @@ export const ImageLayerContent: React.FC<ImageLayerContentProps> = ({
     position: "absolute", // Allow independent positioning
   };
 
+  // Fallback styles for the placeholder when image fails to load
+  const placeholderStyle: React.CSSProperties = {
+    ...imageStyle,
+    backgroundColor: "#CCCCCC",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "#666666",
+    fontSize: "14px",
+    overflow: "hidden",
+  };
+
   return (
     <div style={containerStyle}>
-      <Img src={overlay.src} style={imageStyle} alt="" />
+      {imageError ? (
+        <div style={placeholderStyle}>
+          <div style={{ padding: "20px", textAlign: "center" }}>
+            Unable to load image
+          </div>
+        </div>
+      ) : (
+        <Img 
+          src={imageSource} 
+          style={imageStyle} 
+          alt="" 
+          onError={() => setImageError(true)}
+        />
+      )}
     </div>
   );
 };

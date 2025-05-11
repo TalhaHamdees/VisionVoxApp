@@ -8,7 +8,7 @@ import { Slider } from "@/components/ui/slider"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import type { ImageOverlay } from "../../../../types"
-import { TabBaseProps, BaseKeyframe, generateKeyframeId, formatters } from "../image-transform-types"
+import { TabBaseProps, BaseKeyframe, generateKeyframeId, formatters, ScaleKeyframe, generateKeyframeWithOverlayId } from "../image-transform-types"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
@@ -124,11 +124,12 @@ export const ScaleTab: React.FC<ScaleTabProps> = ({
         onKeyframeChange(updatedKeyframes)
       }
     } else {
-      // Add new keyframe with ID
+      // Add new keyframe with ID tied to this overlay
       const newKeyframe = {
         frame: relativeFrame,
         value: scaleValue,
-        id: generateKeyframeId(),
+        id: generateKeyframeWithOverlayId(localOverlay.uniqueId),
+        overlayUniqueId: localOverlay.uniqueId,
       }
 
       const newKeyframes = [...scaleKeyframes, newKeyframe]
@@ -697,7 +698,7 @@ export const ScaleTab: React.FC<ScaleTabProps> = ({
                 setDraggedKeyframeFrame={setDraggedKeyframeFrame}
                 setDragStartX={setDragStartX}
                 setDragPreviewValue={setDragPreviewValue}
-                sortedKeyframes={sortedKeyframes}
+                localOverlay={localOverlay}
               />
             </div>
           )}

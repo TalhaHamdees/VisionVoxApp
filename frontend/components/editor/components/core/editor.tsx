@@ -200,20 +200,7 @@ export const Editor: React.FC = () => {
         <div className="text-center text-white dark:text-white">
           <h2 className="text-xl font-bold mb-3">React Video Editor</h2>
           <p className="text-sm text-gray-300 dark:text-gray-300 font-light mb-4">
-            Currently, React Video Editor is designed as a full-screen desktop experience. We&apos;re actively working
-            on making it mobile-friendly! 👀
-          </p>
-          <p className="text-sm text-gray-300 dark:text-gray-300 font-light">
-            Want mobile support? Let us know by voting{" "}
-            <a
-              href="https://reactvideoeditor.featurebase.app/p/bulb-mobile-layout-version-2"
-              className="text-white dark:text-white font-medium underline hover:no-underline"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              here
-            </a>
-            !
+            VisionVox Editor is designed as a full-screen desktop experience.
           </p>
         </div>
       </div>

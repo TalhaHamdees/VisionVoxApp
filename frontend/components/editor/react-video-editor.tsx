@@ -20,7 +20,7 @@ import { useHistory } from "./hooks/use-history";
 import { useProjectPersistence } from "./hooks/use-project-persistence";
 
 // Types
-import { Overlay } from "./types";
+import { Overlay, OverlayType } from "./types";
 import { useRendering } from "./hooks/use-rendering";
 import { FPS } from "./constants";
 import { TimelineProvider } from "./contexts/timeline-context";
@@ -113,17 +113,65 @@ export default function ReactVideoEditor() {
     };
   }, [setSelectedOverlayId, setSelectedOverlayIds]);
 
+  // Add this function to sanitize blob URLs in overlays
+  const sanitizeOverlayUrls = async (overlaysToSanitize: Overlay[]) => {
+    const sanitizedOverlays = [...overlaysToSanitize];
+    
+    for (let i = 0; i < sanitizedOverlays.length; i++) {
+      const overlay = sanitizedOverlays[i];
+      
+      // Only process image and video overlays with blob URLs
+      if ((overlay.type === OverlayType.IMAGE || overlay.type === OverlayType.VIDEO) && 
+          'src' in overlay && 
+          overlay.src.startsWith('blob:')) {
+        try {
+          // Attempt to fetch the blob and convert to data URL
+          const response = await fetch(overlay.src);
+          if (!response.ok) {
+            console.error(`Failed to fetch blob URL for overlay ${overlay.id}`);
+            continue;
+          }
+          
+          const blob = await response.blob();
+          const reader = new FileReader();
+          
+          // Use a promise to handle the async FileReader
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          
+          // Update the overlay with the data URL
+          sanitizedOverlays[i] = {
+            ...overlay,
+            src: dataUrl
+          };
+          
+          console.log(`Sanitized blob URL for overlay ${overlay.id}`);
+        } catch (error) {
+          console.error(`Error sanitizing blob URL for overlay ${overlay.id}:`, error);
+        }
+      }
+    }
+    
+    return sanitizedOverlays;
+  };
+
   // Load project on initial render if projectId is in URL
   useEffect(() => {
     const projectId = searchParams.get('projectId');
     if (projectId) {
       const project = loadProject(projectId);
       if (project) {
-        // Apply loaded project state
-        setOverlays(project.overlays);
-        setCurrentFrame(project.currentFrame);
-        setAspectRatio(project.aspectRatio);
-        setCurrentProjectName(project.name);
+        // Sanitize overlays before applying them
+        sanitizeOverlayUrls(project.overlays).then(sanitizedOverlays => {
+          // Apply loaded project state with sanitized URLs
+          setOverlays(sanitizedOverlays);
+          setCurrentFrame(project.currentFrame);
+          setAspectRatio(project.aspectRatio);
+          setCurrentProjectName(project.name);
+        });
       }
     }
   }, [searchParams]);

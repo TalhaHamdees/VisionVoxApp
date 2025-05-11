@@ -1153,8 +1153,8 @@ export default function AudioPage() {
         id: audioId,
         name: fileName,
         blob: blob,
-        duration: audioRefs['generated'].duration || 0,
-        createdAt: new Date().toISOString()
+        type: 'audio/mpeg',
+        duration: audioRefs['generated'].duration || 0
       });
       
       // Create a temporary URL for immediate use
@@ -1181,6 +1181,33 @@ export default function AudioPage() {
       
       // Set flag to add this audio to timeline when editor loads
       localStorage.setItem('visionvox_add_to_timeline', audioId);
+      
+      // Save the script text to localStorage for the Scripts panel to use
+      if (text && text.trim() !== '') {
+        // Create a scripts folder in localStorage if it doesn't exist
+        const scriptsFolder = localStorage.getItem('visionvox_scripts_folder');
+        const scripts = scriptsFolder ? JSON.parse(scriptsFolder) : [];
+        
+        // Create a new script object
+        const scriptObj = {
+          id: audioId, // Use the same ID as the audio file for linking
+          title: fileName.replace('.mp3', ''), // Remove .mp3 extension
+          content: text,
+          audioId: audioId, // Reference to the audio file
+          createdAt: new Date().toISOString()
+        };
+        
+        // Add the script to the scripts folder
+        scripts.push(scriptObj);
+        
+        // Save back to localStorage
+        localStorage.setItem('visionvox_scripts_folder', JSON.stringify(scripts));
+        
+        // Also set a flag to highlight the script in the Scripts panel
+        localStorage.setItem('visionvox_active_script', audioId);
+        
+        debugLog('Script saved to localStorage for Scripts panel', scriptObj);
+      }
       
       // Dispatch a storage event to notify the editor
       window.dispatchEvent(new StorageEvent('storage', {

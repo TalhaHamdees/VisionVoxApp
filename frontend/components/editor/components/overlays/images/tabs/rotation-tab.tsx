@@ -8,15 +8,27 @@ import { Slider } from "@/components/ui/slider"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import type { ImageOverlay } from "../../../../types"
-import { TabBaseProps, RotationKeyframe, generateKeyframeId, formatters } from "../image-transform-types"
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import {
+  TabBaseProps,
+  RotationKeyframe,
+  generateKeyframeId,
+  formatters,
+  generateKeyframeWithOverlayId,
+} from "../image-transform-types"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { KeyframeTimeline } from "./keyframe-timeline"
 
 interface RotationTabProps extends TabBaseProps {
   localOverlay: ImageOverlay
-  handlePositionChange: (updates: Partial<Pick<ImageOverlay, "left" | "top" | "rotation">>) => void
+  handlePositionChange: (
+    updates: Partial<Pick<ImageOverlay, "left" | "top" | "rotation">>,
+  ) => void
   totalFrames?: number
   currentFrame?: number
   onKeyframeChange?: (keyframes: RotationKeyframe[]) => void
@@ -31,82 +43,62 @@ export const RotationTab: React.FC<RotationTabProps> = ({
   currentFrame = 0,
   onKeyframeChange,
 }) => {
-  // Local controlled state for rotation
-  const [rotationValue, setRotationValue] = useState<number>(localOverlay.rotation || 0)
-  
-  // Frame interpolation settings for rotation
-  const [useFrameInterpolation, setUseFrameInterpolation] = useState<boolean>(false)
-  
-  // Store keyframes for rotation
-  const [rotationKeyframes, setRotationKeyframes] = useState<RotationKeyframe[]>([])
-  
-  // Keep track of the last interpolated rotation to avoid unnecessary updates
-  const [lastInterpolatedRotation, setLastInterpolatedRotation] = useState<number>(rotationValue)
-  
-  // Handle dragging keyframes in timeline
-  const [draggedKeyframeFrame, setDraggedKeyframeFrame] = useState<number | null>(null)
+  /* ──────────────── Basic state ──────────────── */
+  const [rotationValue, setRotationValue] = useState<number>(
+    localOverlay.rotation ?? 0,
+  )
+  const [useFrameInterpolation, setUseFrameInterpolation] =
+    useState<boolean>(false)
+
+  /* ──────────────── Keyframe state ──────────────── */
+  const [rotationKeyframes, setRotationKeyframes] =
+    useState<RotationKeyframe[]>([])
+  const [lastInterpolatedRotation, setLastInterpolatedRotation] =
+    useState<number>(rotationValue)
+  const [draggedKeyframeFrame, setDraggedKeyframeFrame] =
+    useState<number | null>(null)
   const [dragStartX, setDragStartX] = useState<number>(0)
   const [activeKeyframe, setActiveKeyframe] = useState<number | null>(null)
   const [dragPreviewValue, setDragPreviewValue] = useState<number | null>(null)
-  
-  // Add additional states for keyframe interaction
   const [showCurvePreview, setShowCurvePreview] = useState<boolean>(false)
 
-  // Sort keyframes by frame number for display
-  const sortedKeyframes = useMemo(() => {
-    return [...rotationKeyframes].sort((a, b) => a.frame - b.frame)
-  }, [rotationKeyframes])
+  /* ──────────────── Helpers ──────────────── */
+  const sortedKeyframes = useMemo(
+    () => [...rotationKeyframes].sort((a, b) => a.frame - b.frame),
+    [rotationKeyframes],
+  )
 
-  // Check if there's a keyframe at the current frame
   const hasKeyframeAtCurrentFrame = useMemo(() => {
     if (currentFrame === undefined) return false
     const relativeFrame = currentFrame - localOverlay.from
-    return rotationKeyframes.some(kf => kf.frame === relativeFrame)
+    return rotationKeyframes.some((kf) => kf.frame === relativeFrame)
   }, [currentFrame, localOverlay.from, rotationKeyframes])
-  
-  // Sync with overlay on change
+
   useEffect(() => {
-    if (useFrameInterpolation) return // Don't sync when using keyframes
-    setRotationValue(localOverlay.rotation || 0)
+    if (useFrameInterpolation) return
+    setRotationValue(localOverlay.rotation ?? 0)
   }, [localOverlay.rotation, useFrameInterpolation])
 
-  // Rotation update handler
+  /* ──────────────── Core update ──────────────── */
+  const clampDeg = (deg: number) =>
+    Math.max(-360, Math.min(360, Number.isFinite(deg) ? deg : 0))
+
   const updateRotation = (deg: number) => {
-    // Normalize the rotation to be between 0 and 359
-    const normalizedDeg = ((deg % 360) + 360) % 360
-    setRotationValue(normalizedDeg)
+    const clamped = clampDeg(deg)
+    setRotationValue(clamped)
 
-    // If there's a keyframe at the current time, update it
     if (hasKeyframeAtCurrentFrame && currentFrame !== undefined) {
-      const relativeFrame = currentFrame - localOverlay.from
-      updateKeyframeValue(relativeFrame, normalizedDeg)
+      const relative = currentFrame - localOverlay.from
+      updateKeyframeValue(relative, clamped)
     } else {
-      // Otherwise, just update the rotation
-      setLastInterpolatedRotation(normalizedDeg)
-      handlePositionChange({ rotation: normalizedDeg })
+      setLastInterpolatedRotation(clamped)
+      handlePositionChange({ rotation: clamped })
     }
   }
 
-  // Convert internal rotation (0-359) to UI rotation (-360 to 360)
-  const toUIRotation = (value: number): number => {
-    // Keep the value as is if it's already in a good display range
-    // but allow converting values over 180 to negative for more intuitive display
-    if (value > 180 && value <= 359) {
-      return value - 360;
-    }
-    return value;
-  }
-
-  // Convert UI rotation (-360 to 360) to internal rotation (0-359)
-  const toInternalRotation = (value: number): number => {
-    // Ensure the value is within the 0-359 range regardless of input
-    return ((value % 360) + 360) % 360;
-  }
-
-  // Reset rotation
   const resetRotation = () => updateRotation(0)
-  
-  // Add a keyframe at the current time
+
+  /* ──────────────── Keyframe CRUD ──────────────── */
   const addKeyframeAtCurrentTime = () => {
     if (currentFrame === undefined) return
 
@@ -130,11 +122,12 @@ export const RotationTab: React.FC<RotationTabProps> = ({
         onKeyframeChange(updatedKeyframes)
       }
     } else {
-      // Add new keyframe with ID
+      // Add new keyframe with ID tied to this overlay
       const newKeyframe = {
         frame: relativeFrame,
         value: rotationValue,
-        id: generateKeyframeId(),
+        id: generateKeyframeWithOverlayId(localOverlay.uniqueId),
+        overlayUniqueId: localOverlay.uniqueId,
       }
 
       const newKeyframes = [...rotationKeyframes, newKeyframe]
@@ -150,403 +143,200 @@ export const RotationTab: React.FC<RotationTabProps> = ({
     setLastInterpolatedRotation(rotationValue)
     handlePositionChange({ rotation: rotationValue })
   }
-  
-  // Update the value of a specific keyframe
+
   const updateKeyframeValue = (frame: number, value: number) => {
-    // Normalize the rotation value
-    const normalizedValue = ((value % 360) + 360) % 360
-    
-    const updatedKeyframes = rotationKeyframes.map(kf => 
-      kf.frame === frame ? { ...kf, value: normalizedValue } : kf
+    const updated = rotationKeyframes.map((kf) =>
+      kf.frame === frame ? { ...kf, value } : kf,
     )
-    
-    setRotationKeyframes(updatedKeyframes)
-    
-    // Notify parent if needed
-    if (onKeyframeChange) {
-      onKeyframeChange(updatedKeyframes)
-    }
-    
-    // Update the local rotation value
-    setRotationValue(normalizedValue)
-    setLastInterpolatedRotation(normalizedValue)
-    handlePositionChange({ rotation: normalizedValue })
+    setRotationKeyframes(updated)
+    onKeyframeChange?.(updated)
+    setRotationValue(value)
+    setLastInterpolatedRotation(value)
+    handlePositionChange({ rotation: value })
   }
 
-  // Edit a keyframe value directly
-  const editKeyframeValue = (frame: number, newValue: number) => {
-    const keyframe = rotationKeyframes.find(kf => kf.frame === frame)
-    if (!keyframe) return
-    
-    // If we received a direct value, use it (normalized)
-    if (typeof newValue === 'number') {
-      updateKeyframeValue(frame, newValue)
-      return
-    }
-    
-    // Otherwise, prompt for a degree value
-    const valueInput = prompt(`Enter rotation in degrees (0-359):`, keyframe.value.toString())
-    if (valueInput === null) return // User cancelled
-    
-    const parsed = parseFloat(valueInput)
-    if (isNaN(parsed)) return // Invalid input
-    
-    // Update rotation with normalization
+  const editKeyframeValue = (frame: number, directValue?: number) => {
+    const kf = rotationKeyframes.find((k) => k.frame === frame)
+    if (!kf) return
+
+    const newVal =
+      typeof directValue === "number"
+        ? directValue
+        : prompt(
+            "Enter rotation in degrees (-360 to 360):",
+            kf.value.toString(),
+          )
+    if (newVal === null) return
+    const parsed = clampDeg(Number(newVal))
     updateKeyframeValue(frame, parsed)
   }
 
-  // Select a keyframe to highlight it
   const selectKeyframe = (frame: number) => {
     setActiveKeyframe(frame)
-    
-    // Find the keyframe
-    const keyframe = rotationKeyframes.find(kf => kf.frame === frame)
-    if (keyframe) {
-      // Update the local rotation value to match the keyframe
-      setRotationValue(keyframe.value)
-      setLastInterpolatedRotation(keyframe.value)
-      handlePositionChange({ rotation: keyframe.value })
-      
-      // Move playhead to this frame
+    const kf = rotationKeyframes.find((k) => k.frame === frame)
+    if (kf) {
+      setRotationValue(kf.value)
+      setLastInterpolatedRotation(kf.value)
+      handlePositionChange({ rotation: kf.value })
       navigateToRelativeFrame(frame)
     }
   }
 
-  // Remove a keyframe at a specific frame
   const removeKeyframe = (frame: number) => {
-    const updatedKeyframes = rotationKeyframes.filter(kf => kf.frame !== frame)
-    setRotationKeyframes(updatedKeyframes)
-    
-    // Clear active keyframe if it was the one removed
-    if (activeKeyframe === frame) {
-      setActiveKeyframe(null)
-    }
-    
-    // Notify parent if needed
-    if (onKeyframeChange) {
-      onKeyframeChange(updatedKeyframes)
-    }
+    const updated = rotationKeyframes.filter((kf) => kf.frame !== frame)
+    setRotationKeyframes(updated)
+    onKeyframeChange?.(updated)
+    if (activeKeyframe === frame) setActiveKeyframe(null)
   }
 
-  // Move a keyframe from one frame to another
-  const updateKeyframePosition = (oldFrame: number, newFrame: number) => {
-    // Check if there's already a keyframe at the new position
-    const existingKeyframeAtTarget = rotationKeyframes.find(kf => kf.frame === newFrame)
-    
-    if (existingKeyframeAtTarget && oldFrame !== newFrame) {
-      // If there's already a keyframe at the target position, we need to handle conflict
-      // For now, we'll just overwrite the target keyframe
-      const keyframeToMove = rotationKeyframes.find(kf => kf.frame === oldFrame)
-      if (!keyframeToMove) return
-      
-      const updatedKeyframes = rotationKeyframes
-        .filter(kf => kf.frame !== oldFrame && kf.frame !== newFrame)
-        .concat([{ ...keyframeToMove, frame: newFrame }])
-      
-      setRotationKeyframes(updatedKeyframes)
-      setActiveKeyframe(newFrame)
-      
-      // Notify parent if needed
-      if (onKeyframeChange) {
-        onKeyframeChange(updatedKeyframes)
-      }
+  const updateKeyframePosition = (oldF: number, newF: number) => {
+    const exists = rotationKeyframes.find((k) => k.frame === newF)
+    let updated: RotationKeyframe[]
+
+    if (exists && oldF !== newF) {
+      const moving = rotationKeyframes.find((k) => k.frame === oldF)!
+      updated = rotationKeyframes
+        .filter((k) => k.frame !== oldF && k.frame !== newF)
+        .concat([{ ...moving, frame: newF }])
     } else {
-      // If there's no keyframe at the target position, just move it
-      const updatedKeyframes = rotationKeyframes.map(kf => 
-        kf.frame === oldFrame ? { ...kf, frame: newFrame } : kf
+      updated = rotationKeyframes.map((k) =>
+        k.frame === oldF ? { ...k, frame: newF } : k,
       )
-      
-      setRotationKeyframes(updatedKeyframes)
-      setActiveKeyframe(newFrame)
-      
-      // Notify parent if needed
-      if (onKeyframeChange) {
-        onKeyframeChange(updatedKeyframes)
-      }
     }
+
+    setRotationKeyframes(updated)
+    setActiveKeyframe(newF)
+    onKeyframeChange?.(updated)
   }
 
-  // Navigation between keyframes
+  /* ──────────────── Navigation helpers ──────────────── */
   const navigateToRelativeFrame = (frame: number) => {
     if (currentFrame === undefined) return
-    
-    // Convert relative frame to global frame
-    const globalFrame = localOverlay.from + frame
-    
-    // Update the parent component's current frame
-    if (onKeyframeChange) {
-      // This is a simplification - you'd need to implement a proper callback
-      // to update the player position in your actual application
-      console.log('Navigate to frame:', globalFrame)
-    }
+    /* hook into global player here if needed */
   }
 
-  // Navigate to the next keyframe
-  const navigateToNextKeyframe = () => {
+  const goToKeyframe = (direction: "next" | "prev") => {
     if (rotationKeyframes.length === 0) return
-    
-    // Sort keyframes by frame position
-    const sortedFrames = [...rotationKeyframes].sort((a, b) => a.frame - b.frame).map(kf => kf.frame)
-    
+    const frames = [...rotationKeyframes]
+      .sort((a, b) => a.frame - b.frame)
+      .map((kf) => kf.frame)
+
     if (activeKeyframe === null) {
-      // If no keyframe is active, go to the first one
-      const firstKeyframe = sortedFrames[0]
-      navigateToRelativeFrame(firstKeyframe)
-      setActiveKeyframe(firstKeyframe)
+      const target = direction === "next" ? frames[0] : frames[frames.length - 1]
+      navigateToRelativeFrame(target)
+      setActiveKeyframe(target)
       return
     }
-    
-    // Find the index of the active keyframe
-    const currentIndex = sortedFrames.indexOf(activeKeyframe)
-    
-    if (currentIndex === -1) {
-      // Active keyframe not found in list, go to first
-      const firstKeyframe = sortedFrames[0]
-      navigateToRelativeFrame(firstKeyframe)
-      setActiveKeyframe(firstKeyframe)
-    } else if (currentIndex < sortedFrames.length - 1) {
-      // Go to next keyframe
-      const nextKeyframe = sortedFrames[currentIndex + 1]
-      navigateToRelativeFrame(nextKeyframe)
-      setActiveKeyframe(nextKeyframe)
+
+    const idx = frames.indexOf(activeKeyframe)
+    if (idx === -1) return
+
+    let target: number
+    if (direction === "next") {
+      target = idx < frames.length - 1 ? frames[idx + 1] : frames[0]
     } else {
-      // At last keyframe, loop to first
-      const firstKeyframe = sortedFrames[0]
-      navigateToRelativeFrame(firstKeyframe)
-      setActiveKeyframe(firstKeyframe)
+      target = idx > 0 ? frames[idx - 1] : frames[frames.length - 1]
     }
+
+    navigateToRelativeFrame(target)
+    setActiveKeyframe(target)
   }
 
-  // Navigate to the previous keyframe
-  const navigateToPrevKeyframe = () => {
-    if (rotationKeyframes.length === 0) return
-    
-    // Sort keyframes by frame position
-    const sortedFrames = [...rotationKeyframes].sort((a, b) => a.frame - b.frame).map(kf => kf.frame)
-    
-    if (activeKeyframe === null) {
-      // If no keyframe is active, go to the last one
-      const lastKeyframe = sortedFrames[sortedFrames.length - 1]
-      navigateToRelativeFrame(lastKeyframe)
-      setActiveKeyframe(lastKeyframe)
-      return
-    }
-    
-    // Find the index of the active keyframe
-    const currentIndex = sortedFrames.indexOf(activeKeyframe)
-    
-    if (currentIndex === -1) {
-      // Active keyframe not found in list, go to last
-      const lastKeyframe = sortedFrames[sortedFrames.length - 1]
-      navigateToRelativeFrame(lastKeyframe)
-      setActiveKeyframe(lastKeyframe)
-    } else if (currentIndex > 0) {
-      // Go to previous keyframe
-      const prevKeyframe = sortedFrames[currentIndex - 1]
-      navigateToRelativeFrame(prevKeyframe)
-      setActiveKeyframe(prevKeyframe)
-    } else {
-      // At first keyframe, loop to last
-      const lastKeyframe = sortedFrames[sortedFrames.length - 1]
-      navigateToRelativeFrame(lastKeyframe)
-      setActiveKeyframe(lastKeyframe)
-    }
+  /* ──────────────── Curve helpers ──────────────── */
+  const shortestDistance = (start: number, end: number) => {
+    let diff = end - start
+    while (diff > 180) diff -= 360
+    while (diff < -180) diff += 360
+    return diff
   }
 
-  // Toggle curve preview
-  const toggleCurvePreview = () => {
-    setShowCurvePreview(!showCurvePreview)
-  }
-
-  // Generate curve visualization points
   const generateCurvePoints = () => {
-    if (rotationKeyframes.length < 2) return ''
-    
-    const sortedFrames = [...rotationKeyframes].sort((a, b) => a.frame - b.frame)
-    
-    // Function to interpolate between points for smoother curves
-    const interpolatePoints = (p1: { frame: number, rotation: number }, 
-                            p2: { frame: number, rotation: number }, 
-                            numPoints: number) => {
-      const points = []
-      
-      // Handle rotation interpolation with special care for angle wrapping
-      const shortestDistance = (start: number, end: number) => {
-        // Normalize angles to 0-359
-        start = ((start % 360) + 360) % 360
-        end = ((end % 360) + 360) % 360
-        
-        // Find shortest angular distance (clockwise or counterclockwise)
-        const clockwiseDist = end >= start ? end - start : 360 - start + end
-        const counterClockwiseDist = start >= end ? start - end : 360 - end + start
-        
-        return clockwiseDist <= counterClockwiseDist ? clockwiseDist : -counterClockwiseDist
-      }
-      
-      const distance = shortestDistance(p1.rotation, p2.rotation)
-      
-      for (let i = 0; i <= numPoints; i++) {
-        const t = i / numPoints
+    if (rotationKeyframes.length < 2) return ""
+    const sorted = [...rotationKeyframes].sort((a, b) => a.frame - b.frame)
+    const points: string[] = []
+
+    const interp = (
+      p1: { frame: number; rot: number },
+      p2: { frame: number; rot: number },
+      n: number,
+    ) => {
+      const pts = []
+      const dist = shortestDistance(p1.rot, p2.rot)
+      for (let i = 0; i <= n; i++) {
+        const t = i / n
         const frame = p1.frame + t * (p2.frame - p1.frame)
-        const framePercent = (frame / localOverlay.durationInFrames) * 100
-        
-        // Smooth easing function for natural movement
-        const smoothT = t * t * (3 - 2 * t) // Smoothstep interpolation
-        
-        // Calculate rotation with proper angle interpolation
-        const rotation = (p1.rotation + smoothT * distance + 360) % 360
-        
-        // Scale to fit curve visualization - normalize to 0-100 range
-        const yPos = 100 - (rotation / 360) * 100
-        
-        points.push(`${framePercent},${yPos}`)
+        const x = (frame / localOverlay.durationInFrames) * 100
+        const smooth = t * t * (3 - 2 * t)
+        const rot = p1.rot + smooth * dist
+        const y = 100 - ((rot + 360) / 720) * 100 // map −360→360 → 0→100
+        pts.push(`${x},${y}`)
       }
-      return points
+      return pts
     }
-    
-    // Create smooth curve with interpolated points
-    let allPoints: string[] = []
-    
-    for (let i = 0; i < sortedFrames.length - 1; i++) {
-      const current = sortedFrames[i]
-      const next = sortedFrames[i + 1]
-      
-      // Calculate how many interpolation points based on frame distance
-      const frameDist = next.frame - current.frame
-      const numInterpPoints = Math.max(4, Math.min(16, Math.floor(frameDist / 2)))
-      
-      // Only add the first point if we're at the beginning, otherwise it would be duplicated
-      if (i === 0) {
-        const x = (current.frame / localOverlay.durationInFrames) * 100
-        const y = 100 - (current.value / 360) * 100
-        allPoints.push(`${x},${y}`)
-      }
-      
-      // Add interpolated points between keyframes
-      const interpPoints = interpolatePoints(
-        { frame: current.frame, rotation: current.value },
-        { frame: next.frame, rotation: next.value },
-        numInterpPoints
+
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const cur = sorted[i]
+      const nxt = sorted[i + 1]
+      const segPts = interp(
+        { frame: cur.frame, rot: cur.value },
+        { frame: nxt.frame, rot: nxt.value },
+        Math.max(4, Math.min(16, Math.floor((nxt.frame - cur.frame) / 2))),
       )
-      
-      // Skip the first interpolated point as it's the same as the current frame
-      allPoints = allPoints.concat(interpPoints.slice(1))
+      if (i === 0) points.push(segPts[0])
+      points.push(...segPts.slice(1))
     }
-    
-    return allPoints.join(' ')
+    return points.join(" ")
   }
 
-  // Get interpolated rotation at any frame
   const getInterpolatedRotation = (frame: number) => {
     if (rotationKeyframes.length === 0) return rotationValue
     if (rotationKeyframes.length === 1) return rotationKeyframes[0].value
-    
-    // Get sorted keyframes
-    const sortedFrames = [...rotationKeyframes].sort((a, b) => a.frame - b.frame)
-    
-    // Check if before first keyframe or after last keyframe
-    if (frame <= sortedFrames[0].frame) return sortedFrames[0].value
-    if (frame >= sortedFrames[sortedFrames.length - 1].frame) return sortedFrames[sortedFrames.length - 1].value
-    
-    // Find the two keyframes to interpolate between
-    for (let i = 0; i < sortedFrames.length - 1; i++) {
-      if (frame >= sortedFrames[i].frame && frame <= sortedFrames[i + 1].frame) {
-        // Handle rotation interpolation with special care for angle wrapping
-        const shortestDistance = (start: number, end: number) => {
-          // Normalize angles to 0-359
-          start = ((start % 360) + 360) % 360
-          end = ((end % 360) + 360) % 360
-          
-          // Find shortest angular distance (clockwise or counterclockwise)
-          const clockwiseDist = end >= start ? end - start : 360 - start + end
-          const counterClockwiseDist = start >= end ? start - end : 360 - end + start
-          
-          return clockwiseDist <= counterClockwiseDist ? clockwiseDist : -counterClockwiseDist
-        }
-        
-        // Calculate interpolation factor
-        const t = (frame - sortedFrames[i].frame) / (sortedFrames[i + 1].frame - sortedFrames[i].frame)
-        
-        // Get the shortest path between angles
-        const distance = shortestDistance(sortedFrames[i].value, sortedFrames[i + 1].value)
-        
-        // Calculate the interpolated value
-        return ((sortedFrames[i].value + t * distance) + 360) % 360
+
+    const sorted = [...rotationKeyframes].sort((a, b) => a.frame - b.frame)
+    if (frame <= sorted[0].frame) return sorted[0].value
+    if (frame >= sorted[sorted.length - 1].frame)
+      return sorted[sorted.length - 1].value
+
+    for (let i = 0; i < sorted.length - 1; i++) {
+      if (frame >= sorted[i].frame && frame <= sorted[i + 1].frame) {
+        const t =
+          (frame - sorted[i].frame) / (sorted[i + 1].frame - sorted[i].frame)
+        const dist = shortestDistance(sorted[i].value, sorted[i + 1].value)
+        return sorted[i].value + t * dist
       }
     }
-    
-    // Fallback
     return rotationValue
   }
 
-  // Effect to update rotation when current frame changes (for keyframe interpolation)
   useEffect(() => {
-    if (!useFrameInterpolation || currentFrame === undefined || rotationKeyframes.length < 2) return
-    
-    // Convert to relative frame
-    const relativeFrame = currentFrame - localOverlay.from
-    
-    // Get interpolated rotation for the current frame
-    const interpolatedRotation = getInterpolatedRotation(relativeFrame)
-    
-    // Only update if it has changed significantly (to avoid too many updates)
-    if (
-      Math.abs(interpolatedRotation - lastInterpolatedRotation) > 0.5
-    ) {
-      setRotationValue(interpolatedRotation)
-      setLastInterpolatedRotation(interpolatedRotation)
-      handlePositionChange({ rotation: interpolatedRotation })
+    if (!useFrameInterpolation || currentFrame === undefined) return
+    const rel = currentFrame - localOverlay.from
+    const interp = getInterpolatedRotation(rel)
+    if (Math.abs(interp - lastInterpolatedRotation) > 0.5) {
+      setRotationValue(interp)
+      setLastInterpolatedRotation(interp)
+      handlePositionChange({ rotation: interp })
     }
-  }, [currentFrame, useFrameInterpolation, rotationKeyframes, lastInterpolatedRotation, localOverlay.from])
+  }, [
+    currentFrame,
+    useFrameInterpolation,
+    rotationKeyframes,
+    lastInterpolatedRotation,
+    localOverlay.from,
+  ])
 
-  // Effect to handle direct slider interaction - needed to handle the -360 to 360 range properly
-  useEffect(() => {
-    const keyframeSliderElement = document.getElementById('rotation-kf-slider');
-    const normalSliderElement = document.getElementById('rotation-normal-slider');
-    
-    const handleSliderInput = (e: Event) => {
-      // Ensure the slider doesn't get stuck at the ends
-      const inputTarget = e.target as HTMLInputElement;
-      if (inputTarget && inputTarget.value) {
-        const value = parseFloat(inputTarget.value);
-        // If value approaches max/min bounds, allow it to wrap around
-        if (value >= 359) {
-          updateRotation(value % 360);
-        } else if (value <= -359) {
-          updateRotation(360 + (value % 360));
-        }
-      }
-    };
-
-    // Add event listeners to both sliders
-    if (keyframeSliderElement) {
-      keyframeSliderElement.addEventListener('input', handleSliderInput);
-    }
-    
-    if (normalSliderElement) {
-      normalSliderElement.addEventListener('input', handleSliderInput);
-    }
-    
-    // Clean up both event listeners
-    return () => {
-      if (keyframeSliderElement) {
-        keyframeSliderElement.removeEventListener('input', handleSliderInput);
-      }
-      if (normalSliderElement) {
-        normalSliderElement.removeEventListener('input', handleSliderInput);
-      }
-    };
-  }, []);
+  /* ──────────────── UI ──────────────── */
+  const quickDegrees = [-180, -90, 0, 90, 180]
 
   return (
     <Collapsible open={expanded} onOpenChange={setExpanded}>
       <CollapsibleTrigger className="flex w-full items-center justify-between py-2 text-sm font-medium">
         <div className="flex items-center gap-2">
-          <ChevronRight 
+          <ChevronRight
             className={cn(
               "h-4 w-4 transition-transform duration-200",
-              expanded ? "rotate-90" : ""
-            )} 
+              expanded && "rotate-90",
+            )}
           />
           <span>Rotation</span>
         </div>
@@ -554,12 +344,15 @@ export const RotationTab: React.FC<RotationTabProps> = ({
           {Math.round(rotationValue)}°
         </div>
       </CollapsibleTrigger>
-      
+
       <CollapsibleContent className="pb-2 pt-1">
         <div className="space-y-4">
-          {/* Animation settings */}
+          {/* Enable keyframe switch */}
           <div className="flex items-center justify-between px-2">
-            <Label htmlFor="enable-rotation-keyframes" className="text-xs font-normal cursor-pointer">
+            <Label
+              htmlFor="enable-rotation-keyframes"
+              className="text-xs font-normal cursor-pointer"
+            >
               Enable keyframe animation
             </Label>
             <Switch
@@ -568,8 +361,8 @@ export const RotationTab: React.FC<RotationTabProps> = ({
               onCheckedChange={setUseFrameInterpolation}
             />
           </div>
-          
-          {/* Only show regular rotation controls when keyframing is disabled */}
+
+          {/* Normal rotation controls */}
           {!useFrameInterpolation && (
             <div className="space-y-3">
               <div className="flex justify-between text-[10px] text-gray-500 dark:text-gray-400 mb-1 px-2">
@@ -578,34 +371,37 @@ export const RotationTab: React.FC<RotationTabProps> = ({
                   {rotationValue.toFixed(0)}°
                 </span>
               </div>
+
               <div className="flex items-center gap-1.5 px-2">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
                       variant="outline"
                       className="h-6 w-6 bg-white dark:bg-gray-900"
-                      onClick={() => updateRotation((rotationValue - 15 + 360) % 360)}
+                      onClick={() => updateRotation(rotationValue - 15)}
                     >
                       <RotateCcw size={12} />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Rotate counterclockwise</TooltipContent>
+                  <TooltipContent>Rotate counter-clockwise</TooltipContent>
                 </Tooltip>
+
                 <Slider
                   id="rotation-normal-slider"
-                  value={[toUIRotation(rotationValue)]}
+                  value={[rotationValue]}
                   min={-360}
                   max={360}
                   step={1}
-                  onValueChange={(v) => updateRotation(toInternalRotation(v[0]))}
+                  onValueChange={([v]) => updateRotation(v)}
                   className="flex-1"
                 />
+
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
                       variant="outline"
                       className="h-6 w-6 bg-white dark:bg-gray-900"
-                      onClick={() => updateRotation((rotationValue + 15) % 360)}
+                      onClick={() => updateRotation(rotationValue + 15)}
                     >
                       <RotateCw size={12} />
                     </Button>
@@ -613,18 +409,23 @@ export const RotationTab: React.FC<RotationTabProps> = ({
                   <TooltipContent>Rotate clockwise</TooltipContent>
                 </Tooltip>
               </div>
+
               <Separator className="my-2" />
-              <div className="grid grid-cols-4 gap-1.5 px-2">
-                {[-90, 0, 90, 180].map((deg) => (
+
+              <div className="grid grid-cols-5 gap-1.5 px-2">
+                {quickDegrees.map((deg) => (
                   <Tooltip key={deg}>
                     <TooltipTrigger asChild>
-                      <Button 
-                        variant={Math.abs(toUIRotation(rotationValue) - deg) < 1 ? "default" : "outline"} 
+                      <Button
+                        variant={
+                          Math.abs(rotationValue - deg) < 1 ? "default" : "outline"
+                        }
                         className={cn(
                           "bg-white dark:bg-gray-900 text-xs h-7",
-                          Math.abs(toUIRotation(rotationValue) - deg) < 1 && "bg-gray-800 text-white hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
+                          Math.abs(rotationValue - deg) < 1 &&
+                            "bg-gray-800 text-white hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600",
                         )}
-                        onClick={() => updateRotation(toInternalRotation(deg))}
+                        onClick={() => updateRotation(deg)}
                       >
                         {deg}°
                       </Button>
@@ -635,48 +436,60 @@ export const RotationTab: React.FC<RotationTabProps> = ({
               </div>
             </div>
           )}
-          
-          {/* Show keyframe controls when animation is enabled */}
+
+          {/* Keyframe-enabled controls */}
           {useFrameInterpolation && (
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">Current Rotation</span>
-                  <span className="text-xs font-medium">{toUIRotation(rotationValue).toFixed(0)}°</span>
+                  <span className="text-xs text-muted-foreground">
+                    Current Rotation
+                  </span>
+                  <span className="text-xs font-medium">
+                    {rotationValue.toFixed(0)}°
+                  </span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-6 text-xs"
-                    onClick={addKeyframeAtCurrentTime}
-                    disabled={currentFrame < localOverlay.from || currentFrame >= localOverlay.from + localOverlay.durationInFrames}
-                  >
-                    {hasKeyframeAtCurrentFrame ? "Update Keyframe" : "Add Keyframe"}
-                  </Button>
-                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 text-xs"
+                  onClick={addKeyframeAtCurrentTime}
+                  disabled={
+                    currentFrame < localOverlay.from ||
+                    currentFrame >=
+                      localOverlay.from + localOverlay.durationInFrames
+                  }
+                >
+                  {hasKeyframeAtCurrentFrame ? "Update Keyframe" : "Add Keyframe"}
+                </Button>
               </div>
-              
-              {/* Rotation control for keyframe animation */}
+
               <div className="flex flex-col space-y-2 px-2 py-1.5 bg-gray-50 dark:bg-gray-900 rounded-md border border-gray-200 dark:border-gray-800">
                 <div className="flex items-center gap-2">
-                  <Label htmlFor="rotation-kf-slider" className="text-xs font-normal text-muted-foreground w-12">
+                  <Label
+                    htmlFor="rotation-kf-slider"
+                    className="text-xs font-normal text-muted-foreground w-12"
+                  >
                     Angle
                   </Label>
+
                   <Slider
                     id="rotation-kf-slider"
                     min={-360}
                     max={360}
                     step={1}
-                    value={[toUIRotation(rotationValue)]}
-                    onValueChange={([value]) => updateRotation(toInternalRotation(value))}
+                    value={[rotationValue]}
+                    onValueChange={([v]) => updateRotation(v)}
                     aria-label="Rotation"
                     className="flex-1 mx-2"
                   />
+
                   <div className="flex items-center gap-1">
-                    <span className="w-10 text-xs tabular-nums text-muted-foreground">
-                      {toUIRotation(rotationValue).toFixed(0)}°
+                    <span className="w-12 text-xs tabular-nums text-muted-foreground text-right">
+                      {rotationValue.toFixed(0)}°
                     </span>
+
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
@@ -684,13 +497,13 @@ export const RotationTab: React.FC<RotationTabProps> = ({
                           size="icon"
                           className="h-5 w-5 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
                           onClick={() => {
-                            const currentDegrees = toUIRotation(rotationValue);
-                            const newValueInput = prompt(`Enter rotation in degrees (-360 to 360):`, currentDegrees.toString());
-                            if (newValueInput !== null) {
-                              const parsed = parseInt(newValueInput, 10);
-                              if (!isNaN(parsed)) {
-                                updateRotation(toInternalRotation(parsed));
-                              }
+                            const input = prompt(
+                              "Enter rotation in degrees (-360 to 360):",
+                              rotationValue.toString(),
+                            )
+                            if (input !== null) {
+                              const parsed = clampDeg(Number(input))
+                              updateRotation(parsed)
                             }
                           }}
                         >
@@ -701,24 +514,28 @@ export const RotationTab: React.FC<RotationTabProps> = ({
                     </Tooltip>
                   </div>
                 </div>
-                
-                <div className="grid grid-cols-4 gap-1.5">
-                  {[-90, 0, 90, 180].map((deg) => (
+
+                <div className="grid grid-cols-5 gap-1.5">
+                  {quickDegrees.map((deg) => (
                     <Button
                       key={deg}
-                      variant={Math.abs(toUIRotation(rotationValue) - deg) < 1 ? "default" : "outline"} 
+                      variant={
+                        Math.abs(rotationValue - deg) < 1 ? "default" : "outline"
+                      }
                       className={cn(
                         "text-xs h-6 text-center",
-                        Math.abs(toUIRotation(rotationValue) - deg) < 1 && "bg-teal-600 hover:bg-teal-700"
+                        Math.abs(rotationValue - deg) < 1 &&
+                          "bg-teal-600 hover:bg-teal-700",
                       )}
-                      onClick={() => updateRotation(toInternalRotation(deg))}
+                      onClick={() => updateRotation(deg)}
                     >
                       {deg}°
                     </Button>
                   ))}
                 </div>
               </div>
-              
+
+              {/* Timeline */}
               <KeyframeTimeline
                 overlayFrom={localOverlay.from}
                 durationInFrames={localOverlay.durationInFrames}
@@ -733,17 +550,17 @@ export const RotationTab: React.FC<RotationTabProps> = ({
                 propertyValue={rotationValue}
                 hasKeyframeAtCurrentFrame={hasKeyframeAtCurrentFrame}
                 propertyLabel="Rotation"
-                valueFormatter={(value) => `${toUIRotation(value as number).toFixed(0)}°`}
+                valueFormatter={(v) => `${v}°`}
                 curveColor="teal"
                 getInterpolatedValue={getInterpolatedRotation}
                 generateCurvePoints={generateCurvePoints}
-                toggleCurvePreview={toggleCurvePreview}
+                toggleCurvePreview={() => setShowCurvePreview((s) => !s)}
                 addKeyframeAtCurrentTime={addKeyframeAtCurrentTime}
                 selectKeyframe={selectKeyframe}
                 updateKeyframePosition={updateKeyframePosition}
                 removeKeyframe={removeKeyframe}
-                navigateToNextKeyframe={navigateToNextKeyframe}
-                navigateToPrevKeyframe={navigateToPrevKeyframe}
+                navigateToNextKeyframe={() => goToKeyframe("next")}
+                navigateToPrevKeyframe={() => goToKeyframe("prev")}
                 navigateToRelativeFrame={navigateToRelativeFrame}
                 updatePropertyValue={updateRotation}
                 setActiveKeyframe={setActiveKeyframe}
@@ -752,7 +569,7 @@ export const RotationTab: React.FC<RotationTabProps> = ({
                 setDraggedKeyframeFrame={setDraggedKeyframeFrame}
                 setDragStartX={setDragStartX}
                 setDragPreviewValue={setDragPreviewValue}
-                sortedKeyframes={sortedKeyframes}
+                localOverlay={localOverlay}
               />
             </div>
           )}
@@ -760,4 +577,4 @@ export const RotationTab: React.FC<RotationTabProps> = ({
       </CollapsibleContent>
     </Collapsible>
   )
-} 
+}

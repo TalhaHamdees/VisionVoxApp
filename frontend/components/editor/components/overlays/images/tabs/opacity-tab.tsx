@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import type { ImageOverlay } from "../../../../types"
-import { TabBaseProps, OpacityKeyframe, generateKeyframeId, formatters } from "../image-transform-types"
+import { TabBaseProps, OpacityKeyframe, generateKeyframeId, generateKeyframeWithOverlayId, formatters } from "../image-transform-types"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
@@ -103,11 +103,12 @@ export const OpacityTab: React.FC<OpacityTabProps> = ({
         onKeyframeChange(updatedKeyframes)
       }
     } else {
-      // Add new keyframe with ID
+      // Add new keyframe with ID tied to this overlay
       const newKeyframe = {
         frame: relativeFrame,
         value: opacityValue,
-        id: generateKeyframeId(),
+        id: generateKeyframeWithOverlayId(localOverlay.uniqueId),
+        overlayUniqueId: localOverlay.uniqueId,
       }
 
       const newKeyframes = [...opacityKeyframes, newKeyframe]
@@ -500,7 +501,7 @@ export const OpacityTab: React.FC<OpacityTabProps> = ({
                 setDraggedKeyframeFrame={setDraggedKeyframeFrame}
                 setDragStartX={setDragStartX}
                 setDragPreviewValue={setDragPreviewValue}
-                sortedKeyframes={sortedKeyframes}
+                localOverlay={localOverlay}
               />
             </div>
           )}

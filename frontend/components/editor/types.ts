@@ -7,10 +7,12 @@ export enum OverlayType {
   SOUND = "sound",
   CAPTION = "caption",
   MEDIA = "media",
+  SCRIPT = "script",
 }
 // Base overlay properties
 type BaseOverlay = {
-  id: number;
+  id: number; // Original numeric ID (keeping for backwards compatibility)
+  uniqueId: string; // New unique string ID for stable keyframe associations
   durationInFrames: number;
   from: number;
   height: number;
@@ -348,4 +350,9 @@ export interface ImageOverlay extends BaseOverlay {
     value: number;
     id?: string;
   }>;
+}
+
+// Helper function to generate a unique overlay ID
+export function generateOverlayId(): string {
+  return `overlay-${Math.random().toString(36).substring(2, 9)}-${Date.now()}`;
 }

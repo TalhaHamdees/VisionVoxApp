@@ -4,6 +4,7 @@
 export interface BaseKeyframe {
   frame: number
   id?: string // Add unique ID for better tracking
+  overlayUniqueId?: string // Associate with a specific overlay
 }
 
 // Opacity keyframe interface
@@ -45,9 +46,37 @@ export interface TabBaseProps {
   currentFrame?: number
 }
 
+// Helper types for keyframe management
+export interface KeyframeInputProps {
+  value: number | { x: number; y: number }
+  onChange: (value: number | { x: number; y: number }) => void
+  addKeyframe: () => void
+  hasKeyframe: boolean
+  min?: number
+  max?: number
+  step?: number
+  label?: string
+  showTimelineButton?: boolean
+}
+
+// Keyframe control props
+export interface KeyframeControlProps<T> {
+  keyframes: Array<{ frame: number; value: T; id?: string }>
+  setKeyframes: React.Dispatch<React.SetStateAction<Array<{ frame: number; value: T; id?: string }>>>
+  currentFrame: number
+  totalFrames: number
+  onChange: (value: T) => void
+  onKeyframeChange?: (keyframes: Array<{ frame: number; value: T; id?: string }>) => void
+}
+
 // Helper function to generate a unique keyframe ID
 export function generateKeyframeId(): string {
   return `kf-${Math.random().toString(36).substring(2, 9)}-${Date.now()}`
+}
+
+// Helper function for associating keyframes with overlays
+export function generateKeyframeWithOverlayId(overlayUniqueId: string): string {
+  return `kf-${overlayUniqueId}-${Math.random().toString(36).substring(2, 5)}-${Date.now()}`;
 }
 
 // Helper function to interpolate between two values

@@ -3,7 +3,7 @@ import { ImageIcon, Film, Sparkles, Info, Plus, Grid, Trash2 } from "lucide-reac
 import { useEditorContext } from "../../../contexts/editor-context";
 import { useTimelinePositioning } from "../../../hooks/use-timeline-positioning";
 import { useTimeline } from "../../../contexts/timeline-context";
-import { OverlayType, ImageOverlay, ClipOverlay } from "../../../types";
+import { OverlayType, ImageOverlay, ClipOverlay, generateOverlayId } from "../../../types";
 import { useFileUpload } from "../../../hooks/use-file-upload";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -12,7 +12,10 @@ import { UploadedFilesGrid } from "../../../components/ui/uploaded-files-grid";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { storeMediaFile, getAllMediaFiles, deleteMediaFile } from "@/lib/indexed-db";
+import { storeMediaFile, getAllMediaFiles, deleteMediaFile, getMediaFileById } from "@/lib/indexed-db";
+
+// Import Overlay type from types.ts to use in findNextAvailablePositionInRow
+import type { Overlay } from "../../../types";
 
 /**
  * MediaPanel Component
@@ -131,67 +134,64 @@ const MediaPanel: React.FC = () => {
     
     // Then store the files in IndexedDB
     if (files && files.length > 0) {
-      const persistFiles = async () => {
-        // Wait a short time to allow useFileUpload to finish processing
-        setTimeout(async () => {
-          try {
-            // Find the newly uploaded files
-            const newUploadedFiles = uploadedFiles.filter(file => 
-              !persistentMediaFiles.some(pFile => pFile.name === file.name)
-            );
-            
-            for (const file of newUploadedFiles) {
-              try {
-                // Convert to data URL for more stable storage
-                let dataUrl: string | undefined;
-                try {
-                  dataUrl = await fileUrlToDataUrl(file.url);
-                } catch (error) {
-                  console.error("Failed to convert to data URL:", error);
-                }
-                
-                // Fetch the actual blob from the URL
-                let blobData: Blob;
-                try {
-                  const response = await fetch(file.url);
-                  blobData = await response.blob();
-                } catch (error) {
-                  console.error("Failed to fetch blob data:", error);
-                  // Create a small placeholder blob if fetch fails
-                  blobData = new Blob([""], { type: file.type });
-                }
-                
-                // Store in IndexedDB with the same ID as in the uploadedFiles state
-                await storeMediaFile({
-                  id: file.id,
-                  blob: blobData,
-                  name: file.name,
-                  type: file.type,
-                  dataUrl: dataUrl
-                });
-                
-                // Store in sessionStorage for immediate use
-                if (dataUrl) {
-                  sessionStorage.setItem(`media_url_${file.id}`, dataUrl);
-                }
-                
-                // Add to persistent files state with data URL
-                setPersistentMediaFiles(prev => [...prev, {
-                  ...file,
-                  dataUrl
-                }]);
-              } catch (error) {
-                console.error(`Error persisting media file ${file.name}:`, error);
-              }
-            }
-          } catch (error) {
-            console.error("Error in persistence processing:", error);
+      // Process and save files immediately
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        try {
+          // Generate a unique ID
+          const fileId = Date.now() + "_" + i;
+          
+          // Create a blob URL for immediate display
+          const blobUrl = URL.createObjectURL(file);
+          
+          // For images, create a data URL for reliable storage
+          let dataUrl;
+          if (file.type.startsWith('image/')) {
+            dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(file);
+            });
           }
-        }, 500);
-      };
+          
+          // Create a file record
+          const fileRecord = {
+            id: fileId,
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            blob: file,  // Store the actual file blob
+            url: blobUrl, // URL for display
+            dataUrl: dataUrl, // Data URL for images
+          };
+          
+          // Store in IndexedDB immediately
+          await storeMediaFile(fileRecord);
+          console.log(`File saved to IndexedDB: ${file.name}`);
+          
+          // Add to our displayed files state
+          if (file.type.startsWith('image/')) {
+            setPersistentMediaFiles(prev => [...prev, fileRecord]);
+          } else if (file.type.startsWith('video/')) {
+            // For videos, we might want to generate a thumbnail
+            setPersistentMediaFiles(prev => [...prev, fileRecord]);
+          }
+        } catch (error) {
+          console.error(`Error handling file ${file.name}:`, error);
+          toast({
+            title: "Error",
+            description: `Failed to process file: ${file.name}`,
+            variant: "destructive"
+          });
+        }
+      }
       
-      // Start the persistence process in the background
-      persistFiles();
+      toast({
+        title: "Files Uploaded",
+        description: `Successfully saved ${files.length} files to library`,
+      });
     }
   };
 
@@ -235,18 +235,55 @@ const MediaPanel: React.FC = () => {
    * @returns Promise<boolean> - Whether the image needs upscaling
    */
   const isLowResolutionImage = async (file: any): Promise<boolean> => {
-    // Create a temporary Image object to get dimensions
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        // Consider an image low resolution if either dimension is less than 800px
-        const isLowRes = img.width < 800 || img.height < 800;
-        URL.revokeObjectURL(img.src);
-        resolve(isLowRes);
-      };
-      img.onerror = () => resolve(false);
-      img.src = file.url;
-    });
+    try {
+      // Create a temporary Image object to get dimensions
+      console.log("[isLowResolutionImage] Checking resolution for:", file.name);
+      
+      return new Promise((resolve) => {
+        const img = new Image();
+        
+        img.onload = () => {
+          // Consider an image low resolution if either dimension is less than 800px
+          const isLowRes = img.width < 800 || img.height < 800;
+          
+          console.log(`[isLowResolutionImage] Image dimensions: ${img.width}x${img.height}, isLowRes: ${isLowRes}`);
+          
+          // Clean up
+          if (img.src.startsWith('blob:')) {
+            URL.revokeObjectURL(img.src);
+          }
+          
+          resolve(isLowRes);
+        };
+        
+        img.onerror = (error) => {
+          console.error("[isLowResolutionImage] Failed to load image for resolution check:", error);
+          resolve(false); // Default to not upscaling on error
+        };
+        
+        // Determine the best source to use
+        if (file.dataUrl) {
+          // Use data URL if available
+          console.log("[isLowResolutionImage] Using dataUrl for resolution check");
+          img.src = file.dataUrl;
+        } else if (file.blob instanceof Blob) {
+          // Create a temporary URL from the blob
+          console.log("[isLowResolutionImage] Creating URL from blob for resolution check");
+          const tempUrl = URL.createObjectURL(file.blob);
+          img.src = tempUrl;
+        } else if (file.url) {
+          // Use the URL if available
+          console.log("[isLowResolutionImage] Using existing URL for resolution check");
+          img.src = file.url;
+        } else {
+          console.error("[isLowResolutionImage] No valid image source for resolution check");
+          resolve(false);
+        }
+      });
+    } catch (error) {
+      console.error("[isLowResolutionImage] Error checking image resolution:", error);
+      return false; // Default to not upscaling on error
+    }
   };
 
   /**
@@ -256,31 +293,100 @@ const MediaPanel: React.FC = () => {
    */
   const enhanceImage = async (file: any) => {
     try {
-      // Fetch the image as a blob
-      const response = await fetch(file.url);
-      const blob = await response.blob();
+      console.log("[enhanceImage] Starting enhancement process for:", file.name);
+      let blob;
+      
+      // Try to use the existing blob if available
+      if (file.blob instanceof Blob) {
+        console.log("[enhanceImage] Using existing blob");
+        blob = file.blob;
+      } else if (file.url) {
+        try {
+          // Try to fetch the blob from the URL
+          console.log("[enhanceImage] Fetching blob from URL:", file.url);
+          const response = await fetch(file.url);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+          }
+          blob = await response.blob();
+          console.log("[enhanceImage] Successfully fetched blob, size:", blob.size);
+        } catch (fetchError) {
+          console.error("[enhanceImage] Failed to fetch blob from URL:", fetchError);
+          // If we have dataUrl, convert it to blob
+          if (file.dataUrl) {
+            console.log("[enhanceImage] Falling back to dataUrl conversion");
+            // Parse the data URL to create a blob directly
+            try {
+              const byteString = atob(file.dataUrl.split(',')[1]);
+              const mimeType = file.dataUrl.split(',')[0].split(':')[1].split(';')[0];
+              const ab = new ArrayBuffer(byteString.length);
+              const ia = new Uint8Array(ab);
+              
+              for (let i = 0; i < byteString.length; i++) {
+                ia[i] = byteString.charCodeAt(i);
+              }
+              
+              blob = new Blob([ab], { type: mimeType });
+              console.log("[enhanceImage] Created blob from dataUrl, size:", blob.size);
+            } catch (error) {
+              console.error("[enhanceImage] Error converting data URL to blob:", error);
+              throw new Error("Could not process image data");
+            }
+          } else {
+            throw new Error("No valid image source found");
+          }
+        }
+      } else if (file.dataUrl) {
+        // If we have a dataUrl but no blob, try to convert it (though this is not ideal for videos)
+        console.log("[enhanceImage] Using dataUrl directly");
+        try {
+          // Parse the data URL to create a blob directly
+          const byteString = atob(file.dataUrl.split(',')[1]);
+          const mimeType = file.dataUrl.split(',')[0].split(':')[1].split(';')[0];
+          const ab = new ArrayBuffer(byteString.length);
+          const ia = new Uint8Array(ab);
+          
+          for (let i = 0; i < byteString.length; i++) {
+            ia[i] = byteString.charCodeAt(i);
+          }
+          
+          blob = new Blob([ab], { type: mimeType });
+          console.log("[enhanceImage] Created blob from dataUrl, size:", blob.size);
+        } catch (conversionError) {
+          console.error("[enhanceImage] Error converting data URL to blob:", conversionError);
+          throw new Error("Could not process image data");
+        }
+      } else {
+        throw new Error("No valid image source found");
+      }
       
       // Create a File object
-      const imageFile = new File([blob], file.name, { type: file.type });
+      const imageFile = new File([blob], file.name || "image.jpg", { type: file.type || "image/jpeg" });
+      console.log("[enhanceImage] Created File object for API request, size:", imageFile.size);
       
       // Build form data
       const formData = new FormData();
       formData.append("image", imageFile);
       formData.append("upscale", "true");
       
+      console.log("[enhanceImage] Calling image enhancement API...");
       // Call enhancement API
       const enhanceResponse = await fetch("/api/image-enhancement?action=enhance", {
         method: "POST",
         body: formData,
       });
       
+      console.log("[enhanceImage] API response status:", enhanceResponse.status);
+      
       if (!enhanceResponse.ok) {
-        throw new Error("Failed to enhance image");
+        throw new Error(`Enhancement failed: ${enhanceResponse.status} ${enhanceResponse.statusText}`);
       }
       
       const enhancedData = await enhanceResponse.json();
+      console.log("[enhanceImage] API response data:", enhancedData);
       
       if (enhancedData.success) {
+        console.log("[enhanceImage] Enhancement successful, enhanced URL:", enhancedData.enhancedImage);
         // Return the enhanced image URL
         return {
           ...file,
@@ -289,9 +395,10 @@ const MediaPanel: React.FC = () => {
         };
       }
       
+      console.log("[enhanceImage] No enhancement returned, using original file");
       return file;
     } catch (error) {
-      console.error("Error enhancing image:", error);
+      console.error("[enhanceImage] Error enhancing image:", error);
       toast({
         title: "Enhancement Failed",
         description: "Could not enhance the image. Using original.",
@@ -322,55 +429,8 @@ const MediaPanel: React.FC = () => {
     }
   };
 
-  /**
-   * Create a stable URL for an image that persists across page reloads
-   */
-  const createStableImageUrl = async (file: any): Promise<string> => {
-    try {
-      // First check if the file has a dataUrl property
-      if (file.dataUrl) {
-        return file.dataUrl;
-      }
-      
-      // Check if we already have a cached URL in sessionStorage
-      const cachedUrl = sessionStorage.getItem(`media_url_${file.id}`);
-      if (cachedUrl) {
-        try {
-          // Verify the URL is still valid
-          await fetch(cachedUrl, { method: 'HEAD' });
-          return cachedUrl;
-        } catch (error) {
-          console.log("Cached URL is no longer valid, recreating...");
-          // Cached URL is invalid, continue to recreate
-        }
-      }
-      
-      // If we have a blob, create a new URL
-      if (file.blob instanceof Blob) {
-        const newUrl = URL.createObjectURL(file.blob);
-        sessionStorage.setItem(`media_url_${file.id}`, newUrl);
-        return newUrl;
-      }
-      
-      // If it's an existing URL, convert to data URL for better persistence
-      if (file.url && !file.url.startsWith('data:')) {
-        try {
-          const dataUrl = await fileUrlToDataUrl(file.url);
-          // Store data URL in sessionStorage for persistence
-          sessionStorage.setItem(`media_url_${file.id}`, dataUrl);
-          return dataUrl;
-        } catch (error) {
-          console.error("Failed to convert to data URL:", error);
-        }
-      }
-      
-      // Fallback to original URL if everything else fails
-      return file.url;
-    } catch (error) {
-      console.error("Error creating stable URL:", error);
-      return file.url; // Return original as fallback
-    }
-  };
+  // Note: We've simplified our approach to directly use IndexedDB
+  // and data URLs for image storage
 
   /**
    * Handle adding a sequence of images to the timeline as keyframes
@@ -397,25 +457,96 @@ const MediaPanel: React.FC = () => {
       for (let i = 0; i < selectedSequence.length; i++) {
         const file = selectedSequence[i];
         
+        // Retrieve the file from IndexedDB to ensure we have the latest data
+        let mediaFile;
+        try {
+          mediaFile = await getMediaFileById(file.id);
+          if (!mediaFile) {
+            throw new Error(`Image not found in storage: ${file.name}`);
+          }
+        } catch (error) {
+          console.error(`Error retrieving image from storage: ${file.name}`, error);
+          toast({
+            title: "Warning",
+            description: `Skipping image that couldn't be loaded: ${file.name}`,
+            variant: "destructive"
+          });
+          continue; // Skip this image and continue with the next one
+        }
+        
         // Check if image needs upscaling
-        const needsUpscaling = await isLowResolutionImage(file);
+        const needsUpscaling = await isLowResolutionImage(mediaFile);
         
         // Process the image if needed
-        let processedFile = file;
         if (needsUpscaling) {
           toast({
             title: "Enhancing Image",
-            description: `Upscaling low-resolution image: ${file.name}`,
+            description: `Upscaling low-resolution image: ${mediaFile.name}`,
           });
-          processedFile = await enhanceImage(file);
+          
+          try {
+            // Create a File object for enhancement
+            const imageFile = new File([mediaFile.blob], mediaFile.name, { type: mediaFile.type });
+            
+            // Build form data
+            const formData = new FormData();
+            formData.append("image", imageFile);
+            formData.append("upscale", "true");
+            
+            // Call enhancement API
+            const enhanceResponse = await fetch("/api/image-enhancement?action=enhance", {
+              method: "POST",
+              body: formData,
+            });
+            
+            if (!enhanceResponse.ok) {
+              throw new Error(`Enhancement failed: ${enhanceResponse.status}`);
+            }
+            
+            const enhancedData = await enhanceResponse.json();
+            
+            if (enhancedData.success) {
+              // Fetch the enhanced image
+              const response = await fetch(enhancedData.enhancedImage);
+              const enhancedBlob = await response.blob();
+              
+              // Create a data URL for storage
+              const enhancedDataUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(enhancedBlob);
+              });
+              
+              // Update the media file with enhanced data
+              mediaFile.dataUrl = enhancedDataUrl;
+              mediaFile.enhanced = true;
+              
+              // Save the enhanced version back to IndexedDB
+              await storeMediaFile(mediaFile);
+            }
+          } catch (enhanceError) {
+            console.error("Enhancement failed:", enhanceError);
+            toast({
+              title: "Enhancement Warning",
+              description: `Failed to enhance ${mediaFile.name}. Using original.`,
+              variant: "destructive"
+            });
+          }
         }
         
-        // Create a stable URL for the image
-        const stableUrl = await createStableImageUrl(processedFile);
-        processedSequence.push({
-          ...processedFile,
-          stableUrl
+        // Add to our processed sequence
+        processedSequence.push(mediaFile);
+      }
+
+      // If no images were successfully processed, exit early
+      if (processedSequence.length === 0) {
+        toast({
+          title: "Error",
+          description: "Failed to process any images for the sequence.",
+          variant: "destructive"
         });
+        return;
       }
 
       // Calculate the total duration for the sequence
@@ -423,26 +554,36 @@ const MediaPanel: React.FC = () => {
       const sequenceDuration = Math.floor(durationInFrames * 0.8); // Use 80% of total timeline
       const frameDuration = Math.floor(sequenceDuration / processedSequence.length);
       
-      // Find the next available position for the sequence
-      const { row } = findNextAvailablePosition(
-        overlays,
-        visibleRows,
-        durationInFrames
-      );
+      // Set row to third row (index 2, since it's zero-based)
+      const row = 2;
+      
+      // Log the row where we're placing the sequence
+      console.log("[handleAddSequenceToTimeline] Placing image sequence on row:", row);
+
+      // Generate a unique ID for the sequence overlay
+      const sequenceUniqueId = generateOverlayId();
+      console.log("[handleAddSequenceToTimeline] Generated unique sequence ID:", sequenceUniqueId);
 
       // Add each image to the timeline sequentially
       for (let i = 0; i < processedSequence.length; i++) {
-        const file = processedSequence[i];
+        const mediaFile = processedSequence[i];
         
         // Position this frame at the correct spot in the sequence
         const from = i * frameDuration;
         
+        // Use the data URL for maximum reliability, fallback to URL
+        const imageUrl = mediaFile.dataUrl || mediaFile.url;
+        
+        // Generate a unique ID for each overlay in the sequence
+        const uniqueId = generateOverlayId();
+        
         // Create the image overlay using the stable URL
         const newImageOverlay: ImageOverlay = {
           id: Date.now() + i,
+          uniqueId: uniqueId, // Add unique ID for keyframe association
           type: OverlayType.IMAGE,
-          src: file.stableUrl || file.url,
-          content: file.name,
+          src: imageUrl,
+          content: mediaFile.name,
           from,
           durationInFrames: frameDuration,
           row,
@@ -470,13 +611,13 @@ const MediaPanel: React.FC = () => {
       
       toast({
         title: "Sequence Added",
-        description: `Successfully added ${processedSequence.length} images to the timeline.`,
+        description: `Successfully added ${processedSequence.length} images to the timeline on row 3.`,
       });
     } catch (error) {
       console.error("Error adding sequence to timeline:", error);
       toast({
         title: "Error",
-        description: "Failed to add image sequence to timeline.",
+        description: error instanceof Error ? error.message : "Failed to add image sequence to timeline.",
         variant: "destructive"
       });
     }
@@ -521,25 +662,137 @@ const MediaPanel: React.FC = () => {
    */
   const handleAddImageToTimeline = async (file: any) => {
     try {
-      // Find the next available position
-      const { from, row } = findNextAvailablePosition(
+      // Show processing toast
+      toast({
+        title: "Processing Image",
+        description: "Preparing image for the timeline...",
+      });
+      
+      // Retrieve the file from IndexedDB to ensure we have the latest data
+      let mediaFile;
+      try {
+        console.log("[handleAddImageToTimeline] Retrieving file from IndexedDB:", file.id);
+        mediaFile = await getMediaFileById(file.id);
+        if (!mediaFile) {
+          throw new Error("Image not found in storage");
+        }
+        console.log("[handleAddImageToTimeline] Retrieved image from IndexedDB:", mediaFile);
+      } catch (error) {
+        console.error("[handleAddImageToTimeline] Error retrieving image from storage:", error);
+        throw new Error("Failed to retrieve image from storage. Please try again.");
+      }
+      
+      // Check if image needs upscaling
+      console.log("[handleAddImageToTimeline] Checking if image needs upscaling");
+      const needsUpscaling = await isLowResolutionImage(mediaFile);
+      console.log("[handleAddImageToTimeline] Image upscaling needed:", needsUpscaling);
+      
+      // Process the image if needed
+      if (needsUpscaling) {
+        toast({
+          title: "Enhancing Image",
+          description: `Upscaling low-resolution image: ${mediaFile.name}`,
+        });
+        
+        try {
+          console.log("[handleAddImageToTimeline] Starting enhancement process");
+          // Create a File object for enhancement
+          const imageFile = new File([mediaFile.blob], mediaFile.name, { type: mediaFile.type });
+          console.log("[handleAddImageToTimeline] Created image file for enhancement, size:", imageFile.size);
+          
+          // Build form data
+          const formData = new FormData();
+          formData.append("image", imageFile);
+          formData.append("upscale", "true");
+          
+          // Call enhancement API
+          console.log("[handleAddImageToTimeline] Calling enhancement API");
+          const enhanceResponse = await fetch("/api/image-enhancement?action=enhance", {
+            method: "POST",
+            body: formData,
+          });
+          
+          console.log("[handleAddImageToTimeline] Enhancement API response status:", enhanceResponse.status);
+          
+          if (!enhanceResponse.ok) {
+            throw new Error(`Enhancement failed: ${enhanceResponse.status}`);
+          }
+          
+          const enhancedData = await enhanceResponse.json();
+          console.log("[handleAddImageToTimeline] Enhancement API response data:", enhancedData);
+          
+          if (enhancedData.success) {
+            console.log("[handleAddImageToTimeline] Enhancement successful, fetching enhanced image");
+            // Fetch the enhanced image
+            const response = await fetch(enhancedData.enhancedImage);
+            const enhancedBlob = await response.blob();
+            console.log("[handleAddImageToTimeline] Retrieved enhanced blob, size:", enhancedBlob.size);
+            
+            // Create a data URL for storage
+            console.log("[handleAddImageToTimeline] Converting enhanced image to data URL");
+            const enhancedDataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => {
+                console.log("[handleAddImageToTimeline] Data URL conversion complete");
+                resolve(reader.result as string);
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(enhancedBlob);
+            });
+            
+            // Update the media file with enhanced data
+            console.log("[handleAddImageToTimeline] Updating media file with enhanced data");
+            mediaFile.dataUrl = enhancedDataUrl;
+            mediaFile.enhanced = true;
+            
+            // Save the enhanced version back to IndexedDB
+            await storeMediaFile(mediaFile);
+            console.log("[handleAddImageToTimeline] Enhanced version saved to IndexedDB");
+          } else {
+            console.log("[handleAddImageToTimeline] Enhancement API did not return success");
+          }
+        } catch (enhanceError) {
+          console.error("[handleAddImageToTimeline] Enhancement failed:", enhanceError);
+          toast({
+            title: "Enhancement Failed",
+            description: "Using original image instead.",
+            variant: "destructive"
+          });
+        }
+      } else {
+        console.log("[handleAddImageToTimeline] Image does not need upscaling, using original");
+      }
+      
+      // Place image on the first row (row 0)
+      const row = 0;
+      
+      // Get next available position in that row
+      const { from } = findNextAvailablePositionInRow(
         overlays,
-        visibleRows,
+        row,
         durationInFrames
       );
       
       // Calculate a reasonable duration for a static image
       const imageDuration = Math.min(300, Math.floor(durationInFrames / 3));
       
-      // Create a stable URL for the image
-      const imageUrl = await createStableImageUrl(file);
+      // Use the data URL for maximum reliability, fallback to URL
+      const imageUrl = mediaFile.dataUrl || mediaFile.url;
+      console.log("[handleAddImageToTimeline] Using image URL for timeline:", 
+                 mediaFile.dataUrl ? "Data URL" : "Blob URL",
+                 "Image enhanced:", mediaFile.enhanced || false);
+      
+      // Generate a unique ID for the overlay
+      const uniqueId = generateOverlayId();
+      console.log("[handleAddImageToTimeline] Generated unique overlay ID:", uniqueId);
       
       // Create the image overlay
       const newImageOverlay: ImageOverlay = {
         id: Date.now(),
+        uniqueId: uniqueId, // Add unique ID for keyframe association
         type: OverlayType.IMAGE,
         src: imageUrl,
-        content: file.name,
+        content: mediaFile.name,
         from,
         durationInFrames: imageDuration,
         row,
@@ -559,20 +812,135 @@ const MediaPanel: React.FC = () => {
       };
       
       // Add to timeline
+      console.log("[handleAddImageToTimeline] Adding image to timeline on row 0:", newImageOverlay);
       addOverlay(newImageOverlay);
       
       toast({
-        title: "Image Added",
-        description: "Image has been added to the timeline.",
+        title: needsUpscaling && mediaFile.enhanced ? "Enhanced Image Added" : "Image Added",
+        description: needsUpscaling && mediaFile.enhanced ? 
+          "The upscaled image has been added to the timeline on row 1." : 
+          "Image has been added to the timeline on row 1.",
       });
     } catch (error) {
-      console.error("Error adding image to timeline:", error);
+      console.error("[handleAddImageToTimeline] Error adding image to timeline:", error);
       toast({
         title: "Error",
-        description: "Failed to add image to timeline. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to add image to timeline. Please try again.",
         variant: "destructive"
       });
     }
+  };
+
+  /**
+   * Add video directly to timeline
+   */
+  const handleAddVideoToTimeline = async (file: any) => {
+    try {
+      // Show processing toast
+      toast({
+        title: "Processing Video",
+        description: "Preparing video for the timeline...",
+      });
+      
+      // Retrieve the file from IndexedDB to ensure we have the latest data
+      let mediaFile;
+      try {
+        mediaFile = await getMediaFileById(file.id);
+        if (!mediaFile) {
+          throw new Error("Video not found in storage");
+        }
+        console.log("Retrieved video from IndexedDB:", mediaFile);
+      } catch (error) {
+        console.error("Error retrieving video from storage:", error);
+        throw new Error("Failed to retrieve video from storage. Please try again.");
+      }
+      
+      // Place video on the second row (row 1)
+      const row = 1;
+      
+      // Get next available position in that row
+      const { from } = findNextAvailablePositionInRow(
+        overlays,
+        row,
+        durationInFrames
+      );
+      
+      // Generate a unique ID for the overlay
+      const uniqueId = generateOverlayId();
+      console.log("[handleAddVideoToTimeline] Generated unique overlay ID:", uniqueId);
+      
+      // Create the video overlay with correct type
+      const newVideoOverlay: ClipOverlay = {
+        id: Date.now(),
+        uniqueId: uniqueId, // Add unique ID for keyframe association
+        type: OverlayType.VIDEO,
+        src: mediaFile.url, // Use URL for videos since they're already stored in IndexedDB
+        content: mediaFile.name,
+        from,
+        durationInFrames: Math.ceil((mediaFile.duration || 3) * 30), // Convert seconds to frames (30fps)
+        row,
+        // Layout properties
+        left: 0,
+        top: 0,
+        width: 1920,
+        height: 1080,
+        rotation: 0,
+        isDragging: false,
+        // Default styles
+        styles: {
+          objectFit: "contain",
+          objectPosition: "center",
+          volume: 1,
+        },
+      };
+      
+      // Add to timeline
+      console.log("[handleAddVideoToTimeline] Adding video to timeline on row 1:", newVideoOverlay);
+      addOverlay(newVideoOverlay);
+      
+      toast({
+        title: "Video Added",
+        description: "Video has been added to the timeline on row 2.",
+      });
+    } catch (error) {
+      console.error("Error adding video to timeline:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to add video to timeline. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Helper function to find the next available position in a specific row
+  const findNextAvailablePositionInRow = (
+    overlays: Overlay[],
+    row: number,
+    durationInFrames: number
+  ) => {
+    // Get overlays in the requested row
+    const overlaysInRow = overlays.filter(overlay => overlay.row === row);
+    
+    if (overlaysInRow.length === 0) {
+      // No overlays in this row, start at the beginning
+      return { from: 0 };
+    }
+    
+    // Find the latest endpoint in the row
+    let lastEndpoint = 0;
+    
+    overlaysInRow.forEach(overlay => {
+      const end = overlay.from + overlay.durationInFrames;
+      if (end > lastEndpoint) {
+        lastEndpoint = end;
+      }
+    });
+    
+    // Start after the last item in the row, or at 0 if the row is empty
+    const from = lastEndpoint;
+    
+    // Return the position
+    return { from };
   };
 
   // Clean up on unmount
@@ -724,45 +1092,7 @@ const MediaPanel: React.FC = () => {
                         <div
                           key={file.id}
                           className="group relative border rounded-md overflow-hidden cursor-pointer hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
-                          onClick={() => {
-                            // Add video to timeline
-                            const { from, row } = findNextAvailablePosition(
-                              overlays,
-                              visibleRows,
-                              durationInFrames
-                            );
-                            
-                            // Create the video overlay with correct type
-                            const newVideoOverlay: ClipOverlay = {
-                              id: Date.now(),
-                              type: OverlayType.VIDEO,
-                              src: file.url,
-                              content: file.name,
-                              from,
-                              durationInFrames: Math.ceil((file.duration || 3) * 30), // Convert seconds to frames (30fps)
-                              row,
-                              // Layout properties
-                              left: 0,
-                              top: 0,
-                              width: 1920,
-                              height: 1080,
-                              rotation: 0,
-                              isDragging: false,
-                              // Default styles
-                              styles: {
-                                objectFit: "contain",
-                                objectPosition: "center",
-                                volume: 1,
-                              },
-                            };
-                            
-                            addOverlay(newVideoOverlay);
-                            
-                            toast({
-                              title: "Video Added",
-                              description: "Video has been added to the timeline.",
-                            });
-                          }}
+                          onClick={() => handleAddVideoToTimeline(file)}
                         >
                           <div className="aspect-video bg-gray-100 dark:bg-gray-800 flex items-center justify-center relative">
                             {file.thumbnail ? (

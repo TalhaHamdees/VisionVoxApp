@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { Card, CardContent } from "../../../../ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { CaptionOverlay } from "../../../types";
 
 /**
@@ -105,10 +105,7 @@ export const CaptionTimeline: React.FC<CaptionTimelineProps> = ({
     const newCaptions = [...localOverlay.captions];
     const currentCaption = newCaptions[captionIndex];
 
-    const words = newText
-      .trim()
-      .split(/\s+/)
-      .filter((word) => word.length > 0);
+    const words = newText.split(/\s+/).filter((word) => word.length > 0);
 
     const captionDuration = currentCaption.endMs - currentCaption.startMs;
     const wordDuration = words.length > 0 ? captionDuration / words.length : 0;
@@ -122,7 +119,7 @@ export const CaptionTimeline: React.FC<CaptionTimelineProps> = ({
 
     newCaptions[captionIndex] = {
       ...currentCaption,
-      text: newText.trim(),
+      text: newText,
       words: newWords,
     };
 
