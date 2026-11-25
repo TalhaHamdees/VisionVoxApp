@@ -6,7 +6,7 @@ VisionVox is a comprehensive web-based video editing platform built with React a
 
 Vision Vox was built by **Muhammad Talha Hamdees** and **Umer Abdullah** as their final-year project for the
 BS Software Engineering at COMSATS University Islamabad (2021-2025), supervised by Ms. Najmun Nisa. It placed
-**3rd in the Web category at the Final Year Project Expo 2025**.
+**3rd in the Web category at the COMSATS Industrial Connect Career Expo Spring 2025** (27 May 2025, Career Development Centre, COMSATS University Islamabad).
 
 | Part | Built by |
 |---|---|
