@@ -2,6 +2,26 @@
 
 VisionVox is a comprehensive web-based video editing platform built with React and Next.js. This project allows users to create and edit videos with features like timeline editing, text overlays, sound integration, and AI-powered scriptwriting.
 
+## Team
+
+Vision Vox was built by **Muhammad Talha Hamdees** and **Umer Abdullah** as their final-year project for the
+BS Software Engineering at COMSATS University Islamabad (2021-2025), supervised by Ms. Najmun Nisa. It placed
+**3rd in the Web category at the Final Year Project Expo 2025**.
+
+| Part | Built by |
+|---|---|
+| AI scriptwriting (`scriptbackend/`) | Talha |
+| Voiceover generation and audio enhancement (`backend/api/audio/`, `frontend/app/audio/`) | Talha |
+| Subtitle generation and customization (`frontend/components/editor/components/overlays/captions/`, `backend/api/subtitles/`) | Talha |
+| High-definition image enhancement with Real-ESRGAN (`backend/ai_models/`, `backend/api/image-enhancement/`) | Talha |
+| YouTube video performance analyzer | Talha and Umer |
+| Web-based video editor | Talha and Umer |
+| User management | Talha and Umer |
+| Requirements, design, UI/UX, testing, deployment, report and expo demo | Talha and Umer |
+
+The project was developed outside GitHub and uploaded here after completion, so the commit history does not
+show who wrote which part.
+
 ## Features
 
 ### Video Editing
